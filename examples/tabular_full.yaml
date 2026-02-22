@@ -1,0 +1,23 @@
+type: tabular
+source: data/source.csv
+target: data/target.csv
+key:
+  - id
+  - region
+ignore_columns:
+  - updated_at
+tolerance:
+  amount: 0.01
+  balance: 0.001
+string_rules:
+  name:
+    - trim
+    - case_insensitive
+normalization:
+  full_name:
+    - op: concat
+      args: ["first_name", " ", "last_name"]
+    - op: trim
+  amount_rounded:
+    - op: round
+      args: [2]

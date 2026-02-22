@@ -23,3 +23,4 @@ clean: ## Remove build artifacts and caches
 	rm -rf dist .pytest_cache .ruff_cache
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -exec rm -rf {} +
+	rm -rf .artifacts/*

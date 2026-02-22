@@ -1,0 +1,13 @@
+type: text
+source: a.log
+target: b.log
+mode: line_by_line
+normalize:
+  ignore_blank_lines: true
+  trim_lines: true
+  collapse_whitespace: true
+  case_insensitive: false
+  normalize_newlines: true
+replace_regex:
+  - pattern: "request_id=[a-f0-9-]+"
+    replace: "request_id=<ID>"

@@ -1,0 +1,16 @@
+type: text
+source: data/source.txt
+target: data/target.txt
+mode: unordered_lines
+normalize:
+  ignore_blank_lines: true
+  trim_lines: true
+  collapse_whitespace: true
+  case_insensitive: false
+  normalize_newlines: true
+drop_lines_regex:
+  - "^#"
+  - "^\\s*$"
+replace_regex:
+  - pattern: "\\d{4}-\\d{2}-\\d{2}"
+    replace: "DATE"
