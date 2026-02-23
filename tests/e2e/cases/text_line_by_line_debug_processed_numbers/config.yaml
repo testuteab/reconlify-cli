@@ -1,0 +1,5 @@
+type: text
+source: source.txt
+target: target.txt
+drop_lines_regex:
+  - "^#"

@@ -390,6 +390,41 @@ def test_line_by_line_debug_report(tmp_path):
     assert samples[0]["processed_line_number_target"] == 2
 
 
+def test_line_by_line_debug_asymmetric_drops(tmp_path):
+    """Debug processed_line_number reflects per-file position, not pair index."""
+    # Source: drops 3 comments, keeps "aaa" (proc 1) and "bbb" (proc 2)
+    source = tmp_path / "source.txt"
+    source.write_text("# a\n# b\n# c\naaa\nbbb\n")
+    # Target: no drops, keeps "aaa" (proc 1), "xxx" (proc 2), "yyy" (proc 3)
+    target = tmp_path / "target.txt"
+    target.write_text("aaa\nxxx\nyyy\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        drop_lines_regex=["^#"],
+    )
+
+    report, exit_code = compare_text(cfg, debug_report=True)
+
+    assert exit_code == 1
+    samples = report["samples"]
+    assert len(samples) == 2
+
+    # Pair 1 diff: src "bbb" (orig 5, proc 2), tgt "xxx" (orig 2, proc 2)
+    assert samples[0]["line_number_source"] == 5
+    assert samples[0]["line_number_target"] == 2
+    assert samples[0]["processed_line_number_source"] == 2
+    assert samples[0]["processed_line_number_target"] == 2
+
+    # Pair 2 diff: src exhausted → null, tgt "yyy" (orig 3, proc 3)
+    assert samples[1]["line_number_source"] is None
+    assert samples[1]["processed_line_number_source"] is None
+    assert samples[1]["line_number_target"] == 3
+    assert samples[1]["processed_line_number_target"] == 3
+
+
 def test_line_by_line_no_debug_fields_by_default(tmp_path):
     """Debug fields must not appear when debug_report is False."""
     source = tmp_path / "source.txt"
@@ -742,3 +777,55 @@ def test_cli_no_include_line_numbers(tmp_path):
     agg = data["samples_agg"]
     assert len(agg) == 2
     assert "source_line_numbers" not in agg[0]
+
+
+# ---------------------------------------------------------------------------
+# Performance-safety tests
+# ---------------------------------------------------------------------------
+
+
+def test_performance_unordered_large_mismatches(tmp_path):
+    """5000 distinct mismatched lines with sample_limit=10: only 10 samples returned."""
+    source = tmp_path / "source.txt"
+    target = tmp_path / "target.txt"
+    source.write_text("\n".join(f"line_{i:05d}" for i in range(5000)) + "\n")
+    target.write_text("")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, exit_code = compare_text(cfg, sample_limit=10)
+
+    assert exit_code == 1
+    assert report["summary"]["different_lines"] == 5000
+    assert len(report["samples_agg"]) == 10
+    assert report["details"]["unordered_stats"]["distinct_mismatched_lines"] == 5000
+    # All diffs are 1, so sorted alphabetically: line_00000, line_00001, ...
+    for i, sample in enumerate(report["samples_agg"]):
+        assert sample["line"] == f"line_{i:05d}"
+        assert sample["source_count"] == 1
+        assert sample["target_count"] == 0
+
+
+def test_performance_line_by_line_large(tmp_path):
+    """5000 different lines with sample_limit=10: only 10 samples returned."""
+    source = tmp_path / "source.txt"
+    target = tmp_path / "target.txt"
+    source.write_text("\n".join(f"src_{i}" for i in range(5000)) + "\n")
+    target.write_text("\n".join(f"tgt_{i}" for i in range(5000)) + "\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+    )
+
+    report, exit_code = compare_text(cfg, sample_limit=10)
+
+    assert exit_code == 1
+    assert report["summary"]["different_lines"] == 5000
+    assert len(report["samples"]) == 10

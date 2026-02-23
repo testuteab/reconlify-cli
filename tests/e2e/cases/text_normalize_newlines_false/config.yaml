@@ -1,0 +1,5 @@
+type: text
+source: source.txt
+target: target.txt
+normalize:
+  normalize_newlines: false

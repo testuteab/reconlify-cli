@@ -1,0 +1,13 @@
+type: text
+source: source.txt
+target: target.txt
+mode: unordered_lines
+normalize:
+  trim_lines: true
+  collapse_whitespace: true
+  ignore_blank_lines: true
+drop_lines_regex:
+  - "^#"
+replace_regex:
+  - pattern: "\\d{4}-\\d{2}-\\d{2}"
+    replace: DATE
