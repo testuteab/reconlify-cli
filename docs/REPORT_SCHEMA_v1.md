@@ -6,7 +6,7 @@ Root:
 
 {
   "type": "tabular" | "text",
-  "version": "1.0",
+  "version": "1.1",
   "generated_at": "ISO-8601 timestamp",
   "config_hash": "sha256 of canonical config JSON",
   "summary": {...},
@@ -104,12 +104,25 @@ details:
 
 [
   {
-    "line_number_source": int,
-    "line_number_target": int,
+    "line_number_source": int | null,
+    "line_number_target": int | null,
     "source": string,
-    "target": string
+    "target": string,
+    "processed_line_number_source": int | null | absent,
+    "processed_line_number_target": int | null | absent
   }
 ]
+
+### Line number semantics (v1.1)
+
+- line_number_source / line_number_target: **original raw file line numbers**
+  (1-based). These refer to the position in the raw file before any
+  normalization, filtering, or dropping.
+- When one side is shorter (missing at this processed index), the
+  corresponding line_number is null.
+- processed_line_number_source / processed_line_number_target: **debug-only
+  fields** (1-based index in the processed stream after filtering). Present
+  only when --debug-report is enabled. Null when the side is missing.
 
 ## samples (unordered_lines mode)
 
@@ -125,9 +138,25 @@ Present only when mode is unordered_lines and there are mismatches.
   {
     "line": string,
     "source_count": int,
-    "target_count": int
+    "target_count": int,
+    "source_line_numbers": [int, ...] | absent,
+    "target_line_numbers": [int, ...] | absent,
+    "source_line_numbers_truncated": bool | absent,
+    "target_line_numbers_truncated": bool | absent
   }
 ]
+
+### Line number arrays
+
+Present when --include-line-numbers is enabled (default: true).
+
+- source_line_numbers / target_line_numbers: lists of **original raw file
+  line numbers** (1-based) where this processed line content occurred.
+- Capped to --max-line-numbers entries per side (default: 10).
+- source_line_numbers_truncated / target_line_numbers_truncated: true when
+  the total occurrences exceed the stored line numbers (i.e. some line
+  numbers were omitted due to the cap).
+- When --no-include-line-numbers is passed, all four fields are absent.
 
 Ordering: sorted by abs(source_count - target_count) descending,
 then by line content lexicographically for determinism.

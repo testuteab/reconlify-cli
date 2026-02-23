@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -92,7 +93,27 @@ def build_error_report(
 
 
 def write_report(report: ReconReport, path: str) -> None:
-    """Serialize report to a JSON file."""
+    """Serialize report to a JSON file.
+
+    Optional model-level fields (error, samples_agg, unordered_stats) are
+    omitted when absent.  Explicit ``null`` values inside sample dicts
+    (e.g. line_number_source for a missing side) are preserved in the
+    JSON output.
+    """
+    data = report.model_dump(mode="json")
+
+    # Strip known optional fields that are None at specific levels
+    for key in ("error", "samples_agg"):
+        if key in data and data[key] is None:
+            del data[key]
+    details = data.get("details")
+    if (
+        isinstance(details, dict)
+        and "unordered_stats" in details
+        and details["unordered_stats"] is None
+    ):
+        del details["unordered_stats"]
+
     with open(path, "w") as f:
-        f.write(report.model_dump_json(indent=2, exclude_none=True))
+        json.dump(data, f, indent=2)
         f.write("\n")

@@ -13,10 +13,11 @@ from reconify.models import TextConfig, TextMode
 def _process_lines(
     path: str,
     config: TextConfig,
-) -> tuple[list[str], int, int]:
+) -> tuple[list[str], list[int], int, int]:
     """Read and process lines from a file according to config rules.
 
-    Returns (processed_lines, drop_count, replace_count).
+    Returns (processed_lines, original_line_numbers, drop_count, replace_count).
+    original_line_numbers[i] is the 1-based raw file line number of processed_lines[i].
     """
     norm = config.normalize
 
@@ -35,12 +36,15 @@ def _process_lines(
     drop_count = 0
     replace_count = 0
     result: list[str] = []
+    orig_nums: list[int] = []
 
     # Compile regexes once
     replace_rules = [(re.compile(r.pattern), r.replace) for r in config.replace_regex]
     drop_patterns = [re.compile(p) for p in config.drop_lines_regex]
 
-    for line in lines:
+    for raw_idx, line in enumerate(lines):
+        orig_line_num = raw_idx + 1  # 1-based
+
         # 2) trim_lines
         if norm.trim_lines:
             line = line.strip()
@@ -73,16 +77,21 @@ def _process_lines(
             continue
 
         result.append(line)
+        orig_nums.append(orig_line_num)
 
-    return result, drop_count, replace_count
+    return result, orig_nums, drop_count, replace_count
 
 
 def _compare_line_by_line(
     source_lines: list[str],
     target_lines: list[str],
+    source_orig_nums: list[int],
+    target_orig_nums: list[int],
     sample_limit: int,
+    *,
+    debug_report: bool = False,
 ) -> tuple[int, list[dict[str, Any]]]:
-    """Line-by-line comparison by index.
+    """Line-by-line comparison by index using original file line numbers.
 
     Returns (different_lines, samples).
     """
@@ -94,27 +103,51 @@ def _compare_line_by_line(
         src = source_lines[i] if i < len(source_lines) else ""
         tgt = target_lines[i] if i < len(target_lines) else ""
 
-        is_missing = i >= len(source_lines) or i >= len(target_lines)
+        src_missing = i >= len(source_lines)
+        tgt_missing = i >= len(target_lines)
 
-        if is_missing or src != tgt:
+        if src_missing or tgt_missing or src != tgt:
             different += 1
             if len(samples) < sample_limit:
-                samples.append(
-                    {
-                        "line_number_source": i + 1,
-                        "line_number_target": i + 1,
-                        "source": src,
-                        "target": tgt,
-                    }
-                )
+                entry: dict[str, Any] = {
+                    "line_number_source": None if src_missing else source_orig_nums[i],
+                    "line_number_target": None if tgt_missing else target_orig_nums[i],
+                    "source": src,
+                    "target": tgt,
+                }
+                if debug_report:
+                    entry["processed_line_number_source"] = None if src_missing else i + 1
+                    entry["processed_line_number_target"] = None if tgt_missing else i + 1
+                samples.append(entry)
 
     return different, samples
+
+
+def _build_line_index(
+    lines: list[str],
+    orig_nums: list[int],
+    max_line_numbers: int,
+) -> dict[str, list[int]]:
+    """Build mapping: line_content -> capped list of original line numbers."""
+    index: dict[str, list[int]] = {}
+    for line, num in zip(lines, orig_nums, strict=True):
+        if line not in index:
+            index[line] = []
+        lst = index[line]
+        if len(lst) < max_line_numbers:
+            lst.append(num)
+    return index
 
 
 def _compare_unordered(
     source_lines: list[str],
     target_lines: list[str],
+    source_orig_nums: list[int],
+    target_orig_nums: list[int],
     sample_limit: int,
+    *,
+    include_line_numbers: bool = True,
+    max_line_numbers: int = 10,
 ) -> tuple[int, list[dict[str, Any]], dict[str, int]]:
     """Unordered multiset comparison using Counter.
 
@@ -122,6 +155,11 @@ def _compare_unordered(
     """
     source_counts: Counter[str] = Counter(source_lines)
     target_counts: Counter[str] = Counter(target_lines)
+
+    # Build line number indexes if requested
+    if include_line_numbers:
+        src_index = _build_line_index(source_lines, source_orig_nums, max_line_numbers)
+        tgt_index = _build_line_index(target_lines, target_orig_nums, max_line_numbers)
 
     all_keys = set(source_counts) | set(target_counts)
 
@@ -146,10 +184,17 @@ def _compare_unordered(
     # Sort by abs(diff) DESC, then by line lexicographically for determinism
     mismatches.sort(key=lambda x: (-x[0], x[1]))
 
-    samples_agg = [
-        {"line": line, "source_count": sc, "target_count": tc}
-        for _, line, sc, tc in mismatches[:sample_limit]
-    ]
+    samples_agg: list[dict[str, Any]] = []
+    for _, line, sc, tc in mismatches[:sample_limit]:
+        entry: dict[str, Any] = {"line": line, "source_count": sc, "target_count": tc}
+        if include_line_numbers:
+            src_nums = src_index.get(line, [])
+            tgt_nums = tgt_index.get(line, [])
+            entry["source_line_numbers"] = src_nums
+            entry["target_line_numbers"] = tgt_nums
+            entry["source_line_numbers_truncated"] = sc > len(src_nums)
+            entry["target_line_numbers_truncated"] = tc > len(tgt_nums)
+        samples_agg.append(entry)
 
     unordered_stats = {
         "source_only_lines": source_only,
@@ -163,6 +208,10 @@ def _compare_unordered(
 def compare_text(
     config: TextConfig,
     sample_limit: int = 2000,
+    *,
+    include_line_numbers: bool = True,
+    max_line_numbers: int = 10,
+    debug_report: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Compare two text files according to the given TextConfig.
 
@@ -174,8 +223,8 @@ def compare_text(
     start = time.monotonic()
 
     try:
-        source_lines, src_drop, src_replace = _process_lines(config.source, config)
-        target_lines, tgt_drop, tgt_replace = _process_lines(config.target, config)
+        source_lines, src_orig, src_drop, src_replace = _process_lines(config.source, config)
+        target_lines, tgt_orig, tgt_drop, tgt_replace = _process_lines(config.target, config)
     except (FileNotFoundError, OSError) as exc:
         elapsed = time.monotonic() - start
         return {
@@ -204,10 +253,23 @@ def compare_text(
     total_replace = src_replace + tgt_replace
 
     if config.mode == TextMode.line_by_line:
-        different, samples = _compare_line_by_line(source_lines, target_lines, sample_limit)
+        different, samples = _compare_line_by_line(
+            source_lines,
+            target_lines,
+            src_orig,
+            tgt_orig,
+            sample_limit,
+            debug_report=debug_report,
+        )
     else:
         different, samples_agg, unordered_stats = _compare_unordered(
-            source_lines, target_lines, sample_limit
+            source_lines,
+            target_lines,
+            src_orig,
+            tgt_orig,
+            sample_limit,
+            include_line_numbers=include_line_numbers,
+            max_line_numbers=max_line_numbers,
         )
 
     elapsed = time.monotonic() - start

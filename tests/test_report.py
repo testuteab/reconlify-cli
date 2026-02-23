@@ -11,7 +11,7 @@ def test_tabular_report_structure() -> None:
     report = build_report(cfg)
     data = json.loads(report.model_dump_json())
     assert data["type"] == "tabular"
-    assert data["version"] == "1.0"
+    assert data["version"] == "1.1"
     assert "generated_at" in data
     assert "config_hash" in data
     assert data["summary"]["total_rows_source"] == 0

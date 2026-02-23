@@ -40,6 +40,21 @@ def run(
         "--sample-limit",
         help="Maximum number of sample diffs to include in the report.",
     ),
+    include_line_numbers: bool = typer.Option(
+        True,
+        "--include-line-numbers/--no-include-line-numbers",
+        help="Include original file line numbers in report samples.",
+    ),
+    max_line_numbers: int = typer.Option(
+        10,
+        "--max-line-numbers",
+        help="Maximum line numbers stored per distinct line in unordered mode.",
+    ),
+    debug_report: bool = typer.Option(
+        False,
+        "--debug-report",
+        help="Include debug fields (processed line numbers) in report samples.",
+    ),
 ) -> None:
     """Load a reconciliation config, validate it, and generate a report."""
     out_path = str(out) if out else "report.json"
@@ -92,7 +107,14 @@ def run(
     # --- Phase 3: run comparison ---
     try:
         if isinstance(cfg, TextConfig):
-            _run_text(cfg, sample_limit, out_path)
+            _run_text(
+                cfg,
+                sample_limit,
+                out_path,
+                include_line_numbers=include_line_numbers,
+                max_line_numbers=max_line_numbers,
+                debug_report=debug_report,
+            )
         else:
             # Tabular (stub — not yet implemented)
             report = build_report(cfg)
@@ -115,11 +137,25 @@ def run(
         raise SystemExit(2) from None
 
 
-def _run_text(cfg: TextConfig, sample_limit: int, out_path: str) -> None:
+def _run_text(
+    cfg: TextConfig,
+    sample_limit: int,
+    out_path: str,
+    *,
+    include_line_numbers: bool = True,
+    max_line_numbers: int = 10,
+    debug_report: bool = False,
+) -> None:
     """Execute text engine comparison and write report."""
     from reconify.text_engine import compare_text
 
-    result, exit_code = compare_text(cfg, sample_limit=sample_limit)
+    result, exit_code = compare_text(
+        cfg,
+        sample_limit=sample_limit,
+        include_line_numbers=include_line_numbers,
+        max_line_numbers=max_line_numbers,
+        debug_report=debug_report,
+    )
 
     h = config_hash(cfg)
     report = build_report(cfg)
