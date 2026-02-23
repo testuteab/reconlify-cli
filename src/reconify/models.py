@@ -136,6 +136,12 @@ class TextRulesApplied(BaseModel):
     replace_rules_count: int = 0
 
 
+class UnorderedStats(BaseModel):
+    source_only_lines: int = 0
+    target_only_lines: int = 0
+    distinct_mismatched_lines: int = 0
+
+
 class TextSummary(BaseModel):
     total_lines_source: int = 0
     total_lines_target: int = 0
@@ -146,6 +152,13 @@ class TextSummary(BaseModel):
 class TextDetails(BaseModel):
     mode: str = TextMode.line_by_line.value
     rules_applied: TextRulesApplied = Field(default_factory=TextRulesApplied)
+    unordered_stats: UnorderedStats | None = None
+
+
+class ReconError(BaseModel):
+    code: str
+    message: str
+    details: str
 
 
 class ReconReport(BaseModel):
@@ -156,3 +169,5 @@ class ReconReport(BaseModel):
     summary: TabularSummary | TextSummary
     details: TabularDetails | TextDetails
     samples: list[Any] = Field(default_factory=list)
+    samples_agg: list[Any] | None = None
+    error: ReconError | None = None

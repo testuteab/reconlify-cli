@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 
 import typer
-from pydantic import ValidationError
+import yaml
+from pydantic import TypeAdapter, ValidationError
 
-from reconify.config_loader import load_config
-from reconify.report import build_report, config_hash, write_report
+from reconify.models import (
+    ReconConfig,
+    ReconError,
+    TextConfig,
+    UnorderedStats,
+)
+from reconify.report import build_error_report, build_report, config_hash, write_report
+
+_adapter = TypeAdapter(ReconConfig)
 
 app = typer.Typer(help="Reconify - rule-based data reconciliation.", invoke_without_command=True)
 
@@ -26,21 +35,113 @@ def run(
         "--out",
         help="Output path for the JSON report (default: report.json in cwd).",
     ),
+    sample_limit: int = typer.Option(
+        2000,
+        "--sample-limit",
+        help="Maximum number of sample diffs to include in the report.",
+    ),
 ) -> None:
     """Load a reconciliation config, validate it, and generate a report."""
+    out_path = str(out) if out else "report.json"
+
+    # --- Phase 1: read config file ---
     try:
-        cfg = load_config(config_path)
-    except ValidationError as exc:
-        typer.echo(f"Config validation failed:\n{exc}", err=True)
-        raise SystemExit(2) from None
+        raw_yaml = config_path.read_text()
     except FileNotFoundError:
-        typer.echo(f"Config file not found: {config_path}", err=True)
+        report = build_error_report(
+            config_type=None,
+            error_code="CONFIG_VALIDATION_ERROR",
+            error_message=f"Config file not found: {config_path}",
+            error_details=f"FileNotFoundError: {config_path}",
+        )
+        write_report(report, out_path)
+        typer.echo(f"Error report written to {out_path}", err=True)
+        raise SystemExit(2) from None
+    except Exception as exc:
+        report = build_error_report(
+            config_type=None,
+            error_code="RUNTIME_ERROR",
+            error_message=f"Failed to read config file: {exc}",
+            error_details=traceback.format_exc(),
+        )
+        write_report(report, out_path)
+        typer.echo(f"Error report written to {out_path}", err=True)
         raise SystemExit(2) from None
 
-    report = build_report(cfg)
-    out_path = str(out) if out else "report.json"
-    write_report(report, out_path)
+    # --- Phase 2: parse and validate config ---
+    raw_dict = yaml.safe_load(raw_yaml)
+    config_type = raw_dict.get("type") if isinstance(raw_dict, dict) else None
+
+    try:
+        if not isinstance(raw_dict, dict):
+            msg = "Config file must contain a YAML mapping"
+            raise ValueError(msg)
+        cfg = _adapter.validate_python(raw_dict)
+    except (ValidationError, ValueError) as exc:
+        report = build_error_report(
+            config_type=config_type,
+            error_code="CONFIG_VALIDATION_ERROR",
+            error_message="Config validation failed",
+            error_details=str(exc),
+            raw_config=raw_yaml,
+        )
+        write_report(report, out_path)
+        typer.echo(f"Config validation failed. Error report written to {out_path}", err=True)
+        raise SystemExit(2) from None
+
+    # --- Phase 3: run comparison ---
+    try:
+        if isinstance(cfg, TextConfig):
+            _run_text(cfg, sample_limit, out_path)
+        else:
+            # Tabular (stub — not yet implemented)
+            report = build_report(cfg)
+            write_report(report, out_path)
+            h = config_hash(cfg)
+            typer.echo(f"Loaded config: {cfg.type}")
+            typer.echo(f"Report written to {out_path} (config_hash={h})")
+    except SystemExit:
+        raise
+    except Exception as exc:
+        report = build_error_report(
+            config_type=config_type,
+            error_code="RUNTIME_ERROR",
+            error_message=str(exc),
+            error_details=traceback.format_exc(),
+            raw_config=raw_yaml,
+        )
+        write_report(report, out_path)
+        typer.echo(f"Runtime error. Error report written to {out_path}", err=True)
+        raise SystemExit(2) from None
+
+
+def _run_text(cfg: TextConfig, sample_limit: int, out_path: str) -> None:
+    """Execute text engine comparison and write report."""
+    from reconify.text_engine import compare_text
+
+    result, exit_code = compare_text(cfg, sample_limit=sample_limit)
 
     h = config_hash(cfg)
+    report = build_report(cfg)
+
+    # Merge engine results into the report
+    report.summary = type(report.summary)(**result["summary"])
+
+    details_kwargs: dict = {
+        "mode": result["details"]["mode"],
+        "rules_applied": type(report.details.rules_applied)(**result["details"]["rules_applied"]),
+    }
+    if result["details"].get("unordered_stats"):
+        details_kwargs["unordered_stats"] = UnorderedStats(**result["details"]["unordered_stats"])
+    report.details = type(report.details)(**details_kwargs)
+
+    report.samples = result["samples"]
+    if result.get("samples_agg") is not None:
+        report.samples_agg = result["samples_agg"]
+    if result.get("error"):
+        report.error = ReconError(**result["error"])
+
+    write_report(report, out_path)
     typer.echo(f"Loaded config: {cfg.type}")
     typer.echo(f"Report written to {out_path} (config_hash={h})")
+    raise SystemExit(exit_code)

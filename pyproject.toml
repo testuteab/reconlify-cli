@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "reconify"
+name = "reconify-cli"
 version = "0.1.0"
 description = "Local-first, rule-based data reconciliation CLI tool"
 authors = []

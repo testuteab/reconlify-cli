@@ -11,8 +11,29 @@ Root:
   "config_hash": "sha256 of canonical config JSON",
   "summary": {...},
   "details": {...},
-  "samples": [...]
+  "samples": [...],
+  "samples_agg": [...] | absent,
+  "error": {...} | absent
 }
+
+---
+
+# ERROR (optional)
+
+Present only when exit code is 2 (config or runtime error).
+
+error:
+
+{
+  "code": "CONFIG_VALIDATION_ERROR" | "RUNTIME_ERROR",
+  "message": string,
+  "details": string
+}
+
+When error is present:
+- summary fields are zeroed out
+- samples is empty
+- details contain default values
 
 ---
 
@@ -75,16 +96,54 @@ details:
   "rules_applied": {
     "drop_lines_count": int,
     "replace_rules_count": int
-    }
+  },
+  "unordered_stats": {...} | absent
 }
 
-samples:
+## samples (line_by_line mode)
 
 [
   {
-    "line_number_source": int | null,
-    "line_number_target": int | null,
+    "line_number_source": int,
+    "line_number_target": int,
     "source": string,
     "target": string
   }
 ]
+
+## samples (unordered_lines mode)
+
+samples is set to [] for backward compatibility.
+
+Aggregated mismatches are reported in root.samples_agg instead.
+
+## samples_agg (optional, unordered_lines mode only)
+
+Present only when mode is unordered_lines and there are mismatches.
+
+[
+  {
+    "line": string,
+    "source_count": int,
+    "target_count": int
+  }
+]
+
+Ordering: sorted by abs(source_count - target_count) descending,
+then by line content lexicographically for determinism.
+
+Limited to --sample-limit items (default 2000).
+
+## unordered_stats (optional, unordered_lines mode only)
+
+Present in details when mode is unordered_lines.
+
+{
+  "source_only_lines": int,
+  "target_only_lines": int,
+  "distinct_mismatched_lines": int
+}
+
+- source_only_lines: sum of max(source_count - target_count, 0) across all distinct lines
+- target_only_lines: sum of max(target_count - source_count, 0) across all distinct lines
+- distinct_mismatched_lines: count of distinct line strings where counts differ
