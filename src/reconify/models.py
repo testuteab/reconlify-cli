@@ -246,6 +246,10 @@ class TextSummary(BaseModel):
 
 class TextDetails(BaseModel):
     mode: str = TextMode.line_by_line.value
+    read_lines_source: int = 0
+    read_lines_target: int = 0
+    ignored_blank_lines_source: int = 0
+    ignored_blank_lines_target: int = 0
     rules_applied: TextRulesApplied = Field(default_factory=TextRulesApplied)
     unordered_stats: UnorderedStats | None = None
 

@@ -76,7 +76,9 @@ class _LineStream:
         "_drop_patterns",
         "_path",
         "_replace_rules",
+        "blank_lines_ignored",
         "drop_count",
+        "raw_lines_count",
         "replace_count",
         "total_lines",
     )
@@ -92,7 +94,9 @@ class _LineStream:
         self._config = config
         self._replace_rules = replace_rules
         self._drop_patterns = drop_patterns
+        self.blank_lines_ignored = 0
         self.drop_count = 0
+        self.raw_lines_count = 0
         self.replace_count = 0
         self.total_lines = 0
 
@@ -111,6 +115,8 @@ class _LineStream:
             self.replace_count += rc
             if dropped:
                 self.drop_count += 1
+            elif result is None:
+                self.blank_lines_ignored += 1
             if result is None:
                 continue
             self.total_lines += 1
@@ -125,6 +131,7 @@ class _LineStream:
                 for line in f:
                     if line.endswith("\n"):
                         line = line[:-1]
+                    self.raw_lines_count += 1
                     yield line
         else:
             # Preserve original newlines — strip only trailing \n so
@@ -133,6 +140,7 @@ class _LineStream:
                 for line in f:
                     if line.endswith("\n"):
                         line = line[:-1]
+                    self.raw_lines_count += 1
                     yield line
 
 
@@ -389,6 +397,10 @@ def compare_text(
             },
             "details": {
                 "mode": config.mode.value,
+                "read_lines_source": 0,
+                "read_lines_target": 0,
+                "ignored_blank_lines_source": 0,
+                "ignored_blank_lines_target": 0,
                 "rules_applied": {
                     "drop_lines_count": 0,
                     "replace_rules_count": 0,
@@ -410,6 +422,10 @@ def compare_text(
 
     details: dict[str, Any] = {
         "mode": config.mode.value,
+        "read_lines_source": src_stream.raw_lines_count,
+        "read_lines_target": tgt_stream.raw_lines_count,
+        "ignored_blank_lines_source": src_stream.blank_lines_ignored,
+        "ignored_blank_lines_target": tgt_stream.blank_lines_ignored,
         "rules_applied": {
             "drop_lines_count": total_drop,
             "replace_rules_count": total_replace,

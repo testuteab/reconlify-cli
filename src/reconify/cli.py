@@ -161,6 +161,10 @@ def _run_text(
 
     details_kwargs: dict = {
         "mode": result["details"]["mode"],
+        "read_lines_source": result["details"]["read_lines_source"],
+        "read_lines_target": result["details"]["read_lines_target"],
+        "ignored_blank_lines_source": result["details"]["ignored_blank_lines_source"],
+        "ignored_blank_lines_target": result["details"]["ignored_blank_lines_target"],
         "rules_applied": type(report.details.rules_applied)(**result["details"]["rules_applied"]),
     }
     if result["details"].get("unordered_stats"):

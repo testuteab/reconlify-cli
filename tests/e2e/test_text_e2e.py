@@ -29,6 +29,16 @@ def _assert_text_base(report):
         assert isinstance(s[field], int), f"summary.{field} not int"
     assert "comparison_time_seconds" in s
     assert isinstance(s["comparison_time_seconds"], (int, float))
+    # read_lines and ignored_blank_lines must always be present
+    d = report["details"]
+    for field in (
+        "read_lines_source",
+        "read_lines_target",
+        "ignored_blank_lines_source",
+        "ignored_blank_lines_target",
+    ):
+        assert field in d, f"details.{field} missing"
+        assert isinstance(d[field], int), f"details.{field} not int"
 
 
 def _assert_line_by_line_samples(report):
@@ -74,6 +84,12 @@ class TestLineByLineE2E:
         assert "samples_agg" not in r
         assert "error" not in r
         _assert_line_by_line_samples(r)
+        # No filtering: read_lines == total_lines, ignored == 0
+        d = r["details"]
+        assert d["read_lines_source"] == 3
+        assert d["read_lines_target"] == 3
+        assert d["ignored_blank_lines_source"] == 0
+        assert d["ignored_blank_lines_target"] == 0
 
     def test_original_line_numbers(self, e2e_runner):
         """Dropped lines -> line_number_* reflects original file positions."""
@@ -271,6 +287,13 @@ class TestNormalizationE2E:
         assert r["summary"]["total_lines_source"] == 2
         assert r["summary"]["total_lines_target"] == 2
         assert r["summary"]["different_lines"] == 0
+        # Source has 4 raw lines (2 blank), target has 2 raw lines (0 blank)
+        d = r["details"]
+        assert d["read_lines_source"] == 4
+        assert d["read_lines_target"] == 2
+        assert d["read_lines_source"] >= r["summary"]["total_lines_source"]
+        assert d["ignored_blank_lines_source"] == 2
+        assert d["ignored_blank_lines_target"] == 0
 
 
 # ---------------------------------------------------------------------------
