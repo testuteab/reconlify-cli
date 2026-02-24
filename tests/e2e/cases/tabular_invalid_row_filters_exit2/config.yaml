@@ -1,0 +1,11 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+filters:
+  row_filters:
+    rules:
+      - column: nonexistent_column
+        op: equals
+        value: test

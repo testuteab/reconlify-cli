@@ -1,0 +1,13 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+filters:
+  row_filters:
+    apply_to: source
+    mode: exclude
+    rules:
+      - column: status
+        op: equals
+        value: CANCELLED

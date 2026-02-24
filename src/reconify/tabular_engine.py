@@ -7,7 +7,7 @@ from typing import Any
 
 import duckdb
 
-from reconify.models import TabularConfig
+from reconify.models import RowFilterOp, RowFilterRule, TabularConfig
 
 
 def compare_tabular(config: TabularConfig) -> tuple[dict[str, Any], int]:
@@ -50,11 +50,7 @@ def _error_result(
             "format": config.format,
             "keys": list(config.keys),
             "compared_columns": [],
-            "filters_applied": {
-                "exclude_keys_count": len(config.filters.exclude_keys),
-                "source_excluded_rows": 0,
-                "target_excluded_rows": 0,
-            },
+            "filters_applied": _empty_filters_applied(config),
         },
         "samples": {
             "missing_in_target": [],
@@ -110,7 +106,7 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
             anti_join_cond = " AND ".join(f'{side}_raw."{k}" = _excluded_keys."{k}"' for k in keys)
             con.execute(
                 f"""
-                CREATE TABLE {side}_filtered AS
+                CREATE TABLE {side}_after_ek AS
                 SELECT s.*
                 FROM {side}_raw s
                 WHERE NOT EXISTS (
@@ -121,14 +117,74 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
             )
 
         source_excluded_rows = (
-            source_total - con.execute("SELECT count(*) FROM source_filtered").fetchone()[0]
+            source_total - con.execute("SELECT count(*) FROM source_after_ek").fetchone()[0]
         )
         target_excluded_rows = (
-            target_total - con.execute("SELECT count(*) FROM target_filtered").fetchone()[0]
+            target_total - con.execute("SELECT count(*) FROM target_after_ek").fetchone()[0]
         )
     else:
-        con.execute("CREATE TABLE source_filtered AS SELECT * FROM source_raw")
-        con.execute("CREATE TABLE target_filtered AS SELECT * FROM target_raw")
+        con.execute("CREATE TABLE source_after_ek AS SELECT * FROM source_raw")
+        con.execute("CREATE TABLE target_after_ek AS SELECT * FROM target_raw")
+
+    # ---------------------------------------------------------------
+    # 2b) APPLY row_filters
+    # ---------------------------------------------------------------
+    src_excluded_rf = 0
+    tgt_excluded_rf = 0
+    rf_cfg = config.filters.row_filters
+
+    if rf_cfg and rf_cfg.rules:
+        # Validate columns exist
+        available_cols = set(_get_column_names(con, "source_after_ek"))
+        available_cols.discard("_reconify_line_number")
+        missing_cols = []
+        for rule in rf_cfg.rules:
+            if rule.column not in available_cols:
+                missing_cols.append(rule.column)
+        if missing_cols:
+            elapsed = time.monotonic() - start
+            return _error_result(
+                config,
+                elapsed,
+                "INVALID_ROW_FILTERS",
+                f"Row filter references missing columns: {missing_cols}",
+            )
+
+        predicate, params = _build_row_filter_predicate(rf_cfg.rules, config)
+
+        apply_source = rf_cfg.apply_to in ("both", "source")
+        apply_target = rf_cfg.apply_to in ("both", "target")
+        is_exclude = rf_cfg.mode == "exclude"
+
+        for side, should_apply in (
+            ("source", apply_source),
+            ("target", apply_target),
+        ):
+            if should_apply:
+                where = f"NOT ({predicate})" if is_exclude else predicate
+                con.execute(
+                    f"""
+                    CREATE TABLE {side}_filtered AS
+                    SELECT * FROM {side}_after_ek
+                    WHERE {where}
+                    """,
+                    params,
+                )
+            else:
+                con.execute(f"CREATE TABLE {side}_filtered AS SELECT * FROM {side}_after_ek")
+
+        if apply_source:
+            before = con.execute("SELECT count(*) FROM source_after_ek").fetchone()[0]
+            after = con.execute("SELECT count(*) FROM source_filtered").fetchone()[0]
+            src_excluded_rf = before - after
+
+        if apply_target:
+            before = con.execute("SELECT count(*) FROM target_after_ek").fetchone()[0]
+            after = con.execute("SELECT count(*) FROM target_filtered").fetchone()[0]
+            tgt_excluded_rf = before - after
+    else:
+        con.execute("CREATE TABLE source_filtered AS SELECT * FROM source_after_ek")
+        con.execute("CREATE TABLE target_filtered AS SELECT * FROM target_after_ek")
 
     # ---------------------------------------------------------------
     # 3) VALIDATE DUPLICATE KEYS
@@ -299,17 +355,33 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
                 per_type_limit,
             )
 
-        # Excluded samples
+        # Excluded samples (exclude_keys)
         if config.filters.exclude_keys:
-            samples_excluded = _fetch_excluded_samples(
+            samples_excluded = _fetch_excluded_key_samples(
                 con,
                 config,
                 keys,
                 source_cols,
                 target_cols,
-                key_join_cond,
                 per_type_limit,
             )
+
+        # Excluded samples (row_filters)
+        if rf_cfg and rf_cfg.rules and (src_excluded_rf > 0 or tgt_excluded_rf > 0):
+            rf_excluded = _fetch_row_filter_excluded_samples(
+                con,
+                config,
+                keys,
+                source_cols,
+                target_cols,
+                predicate,
+                params,
+                rf_cfg,
+                per_type_limit,
+            )
+            samples_excluded.extend(rf_excluded)
+            # Re-sort combined excluded samples by keys ASC
+            samples_excluded.sort(key=lambda e: tuple(str(e["key"].get(k, "")) for k in keys))
 
     # ---------------------------------------------------------------
     # 10) BUILD REPORT
@@ -335,11 +407,13 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
             "format": config.format,
             "keys": list(keys),
             "compared_columns": compared_columns,
-            "filters_applied": {
-                "exclude_keys_count": len(config.filters.exclude_keys),
-                "source_excluded_rows": source_excluded_rows,
-                "target_excluded_rows": target_excluded_rows,
-            },
+            "filters_applied": _build_filters_applied(
+                config,
+                source_excluded_rows,
+                target_excluded_rows,
+                src_excluded_rf,
+                tgt_excluded_rf,
+            ),
         },
         "samples": {
             "missing_in_target": samples_missing_target,
@@ -525,13 +599,12 @@ def _normalize_value(val: Any, config: TabularConfig) -> Any:
     return s
 
 
-def _fetch_excluded_samples(
+def _fetch_excluded_key_samples(
     con: duckdb.DuckDBPyConnection,
     config: TabularConfig,
     keys: list[str],
     source_cols: list[str],
     target_cols: list[str],
-    key_join_cond: str,
     limit: int,
 ) -> list[dict]:
     """Fetch samples of rows that were excluded by exclude_keys."""
@@ -633,3 +706,246 @@ def _compute_column_stats(
         ).fetchone()[0]
         stats[c] = {"mismatched_count": count}
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Row filters helpers
+# ---------------------------------------------------------------------------
+
+
+def _empty_filters_applied(config: TabularConfig) -> dict[str, Any]:
+    """Return zeroed-out filters_applied dict."""
+    rf = config.filters.row_filters
+    return {
+        "exclude_keys_count": len(config.filters.exclude_keys),
+        "source_excluded_rows": 0,
+        "target_excluded_rows": 0,
+        "row_filters_count": len(rf.rules) if rf else 0,
+        "row_filters_apply_to": rf.apply_to if rf else "both",
+        "row_filters_mode": rf.mode if rf else "exclude",
+        "source_excluded_rows_row_filters": 0,
+        "target_excluded_rows_row_filters": 0,
+    }
+
+
+def _build_filters_applied(
+    config: TabularConfig,
+    source_excluded_ek: int,
+    target_excluded_ek: int,
+    source_excluded_rf: int,
+    target_excluded_rf: int,
+) -> dict[str, Any]:
+    """Build the filters_applied dict for the report."""
+    rf = config.filters.row_filters
+    return {
+        "exclude_keys_count": len(config.filters.exclude_keys),
+        "source_excluded_rows": source_excluded_ek + source_excluded_rf,
+        "target_excluded_rows": target_excluded_ek + target_excluded_rf,
+        "row_filters_count": len(rf.rules) if rf else 0,
+        "row_filters_apply_to": rf.apply_to if rf else "both",
+        "row_filters_mode": rf.mode if rf else "exclude",
+        "source_excluded_rows_row_filters": source_excluded_rf,
+        "target_excluded_rows_row_filters": target_excluded_rf,
+    }
+
+
+def _build_rule_expr(
+    rule: RowFilterRule,
+    config: TabularConfig,
+) -> tuple[str, list[Any]]:
+    """Convert a single RowFilterRule to (sql_fragment, params).
+
+    Uses DuckDB parameter binding (?) to avoid SQL injection.
+    """
+    col = f'"{rule.column}"'
+    params: list[Any] = []
+
+    # is_null / not_null don't need CAST or normalization
+    if rule.op == RowFilterOp.is_null:
+        return f"{col} IS NULL", []
+    if rule.op == RowFilterOp.not_null:
+        return f"{col} IS NOT NULL", []
+
+    # String-ish ops: build normalized expression
+    expr = f"CAST({col} AS VARCHAR)"
+
+    # Apply normalize_nulls from config.compare
+    for null_val in config.compare.normalize_nulls:
+        expr = f"NULLIF({expr}, '{_escape_sql_str(null_val)}')"
+
+    # Per-rule trim (inherits from compare if not set)
+    trim = rule.trim_whitespace
+    if trim is None:
+        trim = config.compare.trim_whitespace
+    if trim:
+        expr = f"TRIM({expr})"
+
+    # Per-rule case_insensitive (inherits from compare if not set)
+    ci = rule.case_insensitive
+    if ci is None:
+        ci = config.compare.case_insensitive
+    if ci:
+        expr = f"LOWER({expr})"
+
+    if rule.op == RowFilterOp.equals:
+        val = _coerce_param(rule.value, ci)
+        params.append(val)
+        return f"{expr} = ?", params
+
+    if rule.op == RowFilterOp.not_equals:
+        val = _coerce_param(rule.value, ci)
+        params.append(val)
+        return f"{expr} <> ?", params
+
+    if rule.op == RowFilterOp.in_:
+        placeholders = ", ".join("?" for _ in rule.values)
+        for v in rule.values:
+            params.append(_coerce_param(v, ci))
+        return f"{expr} IN ({placeholders})", params
+
+    if rule.op == RowFilterOp.contains:
+        val = _coerce_param(rule.value, ci)
+        params.append(val)
+        return f"{expr} LIKE '%' || ? || '%'", params
+
+    # regex
+    pat = rule.pattern
+    if ci:
+        pat = f"(?i){pat}"
+    params.append(pat)
+    return f"regexp_matches({expr}, ?)", params
+
+
+def _coerce_param(value: Any, case_insensitive: bool) -> str:
+    """Convert a filter value to a string param, lowering if needed."""
+    s = str(value)
+    if case_insensitive:
+        s = s.lower()
+    return s
+
+
+def _escape_sql_str(s: str) -> str:
+    """Escape single quotes for SQL string literals."""
+    return s.replace("'", "''")
+
+
+def _build_row_filter_predicate(
+    rules: list[RowFilterRule],
+    config: TabularConfig,
+) -> tuple[str, list[Any]]:
+    """Build a combined AND predicate from a list of rules.
+
+    Returns (sql_predicate, flat_params_list).
+    """
+    fragments: list[str] = []
+    all_params: list[Any] = []
+
+    for rule in rules:
+        frag, params = _build_rule_expr(rule, config)
+        fragments.append(f"({frag})")
+        all_params.extend(params)
+
+    predicate = " AND ".join(fragments) if fragments else "TRUE"
+    return predicate, all_params
+
+
+def _fetch_row_filter_excluded_samples(
+    con: duckdb.DuckDBPyConnection,
+    config: TabularConfig,
+    keys: list[str],
+    source_cols: list[str],
+    target_cols: list[str],
+    predicate: str,
+    params: list[Any],
+    rf_cfg: Any,
+    limit: int,
+) -> list[dict]:
+    """Fetch samples of rows excluded by row_filters."""
+    samples: list[dict] = []
+    is_exclude = rf_cfg.mode == "exclude"
+    apply_source = rf_cfg.apply_to in ("both", "source")
+    apply_target = rf_cfg.apply_to in ("both", "target")
+
+    # For exclude mode: excluded rows are those matching the predicate
+    # For include mode: excluded rows are those NOT matching the predicate
+    where = predicate if is_exclude else f"NOT ({predicate})"
+
+    if apply_source:
+        samples.extend(
+            _fetch_rf_side_samples(
+                con,
+                "source_after_ek",
+                "source",
+                keys,
+                source_cols,
+                where,
+                params,
+                limit,
+            )
+        )
+
+    if apply_target:
+        samples.extend(
+            _fetch_rf_side_samples(
+                con,
+                "target_after_ek",
+                "target",
+                keys,
+                target_cols,
+                where,
+                params,
+                limit,
+            )
+        )
+
+    samples.sort(key=lambda e: tuple(str(e["key"].get(k, "")) for k in keys))
+    return samples
+
+
+def _fetch_rf_side_samples(
+    con: duckdb.DuckDBPyConnection,
+    table: str,
+    side: str,
+    keys: list[str],
+    cols: list[str],
+    where: str,
+    params: list[Any],
+    limit: int,
+) -> list[dict]:
+    """Fetch row_filter excluded samples for one side."""
+    data_cols = ", ".join(
+        f'r."{c}"' for c in cols if c != "_reconify_line_number" and c not in keys
+    )
+    key_select = ", ".join(f'r."{k}"' for k in keys)
+    key_order = ", ".join(f'r."{k}" ASC' for k in keys)
+
+    query = f"""
+    SELECT r._reconify_line_number AS line_number,
+           {key_select}
+           {"," + data_cols if data_cols else ""}
+    FROM {table} r
+    WHERE {where}
+    ORDER BY {key_order}
+    LIMIT {limit}
+    """
+    rows = con.execute(query, params).fetchall()
+    desc = con.description
+    col_names = [d[0] for d in desc]
+
+    ln_field = "line_number_source" if side == "source" else "line_number_target"
+    samples: list[dict] = []
+    for row in rows:
+        row_dict = dict(zip(col_names, row, strict=False))
+        entry: dict[str, Any] = {
+            "side": side,
+            "key": {k: row_dict.get(k) for k in keys},
+            ln_field: row_dict["line_number"],
+            "row": {
+                c: row_dict[c]
+                for c in cols
+                if c != "_reconify_line_number" and c not in keys and c in row_dict
+            },
+            "reason": "row_filters",
+        }
+        samples.append(entry)
+    return samples

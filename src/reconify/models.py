@@ -53,8 +53,53 @@ class TabularCompare(BaseModel):
     normalize_nulls: list[str] = Field(default_factory=lambda: ["", "NULL", "null"])
 
 
+class RowFilterOp(StrEnum):
+    equals = "equals"
+    not_equals = "not_equals"
+    in_ = "in"
+    contains = "contains"
+    regex = "regex"
+    is_null = "is_null"
+    not_null = "not_null"
+
+
+class RowFilterRule(BaseModel):
+    column: str
+    op: RowFilterOp
+    value: str | int | float | bool | None = None
+    values: list[str | int | float | bool] | None = None
+    pattern: str | None = None
+    case_insensitive: bool | None = None
+    trim_whitespace: bool | None = None
+
+    @model_validator(mode="after")
+    def _check_op_params(self) -> RowFilterRule:
+        op = self.op
+        if op in (RowFilterOp.equals, RowFilterOp.not_equals, RowFilterOp.contains):
+            if self.value is None:
+                raise ValueError(f"op={op.value!r} requires 'value' to be set")
+        elif op == RowFilterOp.in_:
+            if not self.values:
+                raise ValueError("op='in' requires 'values' to be a non-empty list")
+        elif op == RowFilterOp.regex:
+            if not self.pattern:
+                raise ValueError("op='regex' requires 'pattern' to be a non-empty string")
+        elif op in (RowFilterOp.is_null, RowFilterOp.not_null) and (
+            self.value is not None or self.values is not None or self.pattern is not None
+        ):
+            raise ValueError(f"op={op.value!r} must not have 'value', 'values', or 'pattern'")
+        return self
+
+
+class RowFiltersConfig(BaseModel):
+    apply_to: Literal["both", "source", "target"] = "both"
+    mode: Literal["exclude", "include"] = "exclude"
+    rules: list[RowFilterRule] = Field(default_factory=list)
+
+
 class TabularFilters(BaseModel):
     exclude_keys: list[dict[str, Any]] = Field(default_factory=list)
+    row_filters: RowFiltersConfig | None = None
 
 
 class TabularCsvOptions(BaseModel):
@@ -158,6 +203,11 @@ class TabularFiltersApplied(BaseModel):
     exclude_keys_count: int = 0
     source_excluded_rows: int = 0
     target_excluded_rows: int = 0
+    row_filters_count: int = 0
+    row_filters_apply_to: str = "both"
+    row_filters_mode: str = "exclude"
+    source_excluded_rows_row_filters: int = 0
+    target_excluded_rows_row_filters: int = 0
 
 
 class TabularDetails(BaseModel):

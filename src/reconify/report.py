@@ -43,6 +43,15 @@ def build_report(cfg: TabularConfig | TextConfig) -> ReconReport:
                 keys=list(cfg.keys),
                 filters_applied=TabularFiltersApplied(
                     exclude_keys_count=len(cfg.filters.exclude_keys),
+                    row_filters_count=(
+                        len(cfg.filters.row_filters.rules) if cfg.filters.row_filters else 0
+                    ),
+                    row_filters_apply_to=(
+                        cfg.filters.row_filters.apply_to if cfg.filters.row_filters else "both"
+                    ),
+                    row_filters_mode=(
+                        cfg.filters.row_filters.mode if cfg.filters.row_filters else "exclude"
+                    ),
                 ),
             ),
         )

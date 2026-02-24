@@ -1,0 +1,5 @@
+id,status,name,value
+1,ACTIVE,Alice,100
+2,CANCELLED,Bob,200
+3,ACTIVE,Charlie,300
+4,CANCELLED,Diana,400

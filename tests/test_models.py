@@ -115,6 +115,114 @@ def test_tabular_exclude_keys_extra_column_rejected() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tabular - row_filters validation
+# ---------------------------------------------------------------------------
+
+
+def test_row_filter_equals_valid() -> None:
+    cfg = adapter.validate_python(
+        {
+            "type": "tabular",
+            "source": "a.csv",
+            "target": "b.csv",
+            "keys": ["id"],
+            "filters": {
+                "row_filters": {
+                    "mode": "exclude",
+                    "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+                },
+            },
+        }
+    )
+    assert len(cfg.filters.row_filters.rules) == 1
+
+
+def test_row_filter_in_valid() -> None:
+    cfg = adapter.validate_python(
+        {
+            "type": "tabular",
+            "source": "a.csv",
+            "target": "b.csv",
+            "keys": ["id"],
+            "filters": {
+                "row_filters": {
+                    "rules": [{"column": "region", "op": "in", "values": ["US", "EU"]}],
+                },
+            },
+        }
+    )
+    assert cfg.filters.row_filters.rules[0].values == ["US", "EU"]
+
+
+def test_row_filter_regex_missing_pattern_rejected() -> None:
+    with pytest.raises(ValidationError, match="pattern"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "filters": {
+                    "row_filters": {
+                        "rules": [{"column": "name", "op": "regex"}],
+                    },
+                },
+            }
+        )
+
+
+def test_row_filter_in_missing_values_rejected() -> None:
+    with pytest.raises(ValidationError, match="values"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "filters": {
+                    "row_filters": {
+                        "rules": [{"column": "region", "op": "in"}],
+                    },
+                },
+            }
+        )
+
+
+def test_row_filter_is_null_with_value_rejected() -> None:
+    with pytest.raises(ValidationError, match="must not have"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "filters": {
+                    "row_filters": {
+                        "rules": [{"column": "x", "op": "is_null", "value": "foo"}],
+                    },
+                },
+            }
+        )
+
+
+def test_row_filter_equals_missing_value_rejected() -> None:
+    with pytest.raises(ValidationError, match="value"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "filters": {
+                    "row_filters": {
+                        "rules": [{"column": "x", "op": "equals"}],
+                    },
+                },
+            }
+        )
+
+
+# ---------------------------------------------------------------------------
 # Text - valid
 # ---------------------------------------------------------------------------
 

@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from reconify.models import TabularConfig
+from reconify.models import RowFilterRule, TabularConfig
 from reconify.tabular_engine import compare_tabular
 
 
@@ -385,3 +385,460 @@ def test_column_stats():
     assert "column_stats" in result
     assert result["column_stats"]["value"]["mismatched_count"] == 1
     assert result["column_stats"]["name"]["mismatched_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - exclude mode
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_exclude_both():
+    """Exclude rows where status=CANCELLED from both sides."""
+    src = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,200\n3,ACTIVE,300\n")
+    tgt = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,999\n3,ACTIVE,300\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    fa = result["details"]["filters_applied"]
+    assert fa["row_filters_count"] == 1
+    assert fa["source_excluded_rows_row_filters"] == 1
+    assert fa["target_excluded_rows_row_filters"] == 1
+    assert fa["row_filters_mode"] == "exclude"
+    assert fa["row_filters_apply_to"] == "both"
+
+
+def test_row_filters_exclude_with_samples():
+    """Excluded row samples should have reason='row_filters'."""
+    src = _write_csv("id,status\n1,ACTIVE\n2,CANCELLED\n")
+    tgt = _write_csv("id,status\n1,ACTIVE\n2,CANCELLED\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    excluded = result["samples"]["excluded"]
+    rf_excluded = [e for e in excluded if e["reason"] == "row_filters"]
+    assert len(rf_excluded) >= 1
+    assert all(e["key"]["id"] == "2" for e in rf_excluded)
+
+
+# ---------------------------------------------------------------------------
+# Row filters - include mode
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_include_mode():
+    """Include mode keeps only rows matching the rules."""
+    src = _write_csv("id,region,value\n1,US,100\n2,EU,200\n3,US,300\n")
+    tgt = _write_csv("id,region,value\n1,US,100\n2,EU,999\n3,US,300\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "include",
+                "rules": [{"column": "region", "op": "equals", "value": "US"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    # Only US rows remain; EU row with mismatch is excluded
+    assert exit_code == 0
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 1
+    assert fa["target_excluded_rows_row_filters"] == 1
+    assert fa["row_filters_mode"] == "include"
+
+
+# ---------------------------------------------------------------------------
+# Row filters - apply_to variants
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_apply_to_source_only():
+    """apply_to=source filters only source; target keeps all rows."""
+    src = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,200\n")
+    tgt = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,999\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "apply_to": "source",
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    # Source has id=2 removed; target still has it -> missing_in_source=1
+    assert exit_code == 1
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 1
+    assert fa["target_excluded_rows_row_filters"] == 0
+    assert result["summary"]["missing_in_source"] == 1
+
+
+def test_row_filters_apply_to_target_only():
+    """apply_to=target filters only target."""
+    src = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,200\n")
+    tgt = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,999\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "apply_to": "target",
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    # Target has id=2 removed; source still has it -> missing_in_target=1
+    assert exit_code == 1
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 0
+    assert fa["target_excluded_rows_row_filters"] == 1
+    assert result["summary"]["missing_in_target"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - operator tests
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_op_not_equals():
+    src = _write_csv("id,status\n1,ACTIVE\n2,CANCELLED\n")
+    tgt = _write_csv("id,status\n1,ACTIVE\n2,CANCELLED\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "not_equals", "value": "ACTIVE"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+def test_row_filters_op_in():
+    src = _write_csv("id,region\n1,US\n2,EU\n3,APAC\n")
+    tgt = _write_csv("id,region\n1,US\n2,EU\n3,APAC\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "include",
+                "rules": [{"column": "region", "op": "in", "values": ["US", "EU"]}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    fa = result["details"]["filters_applied"]
+    # APAC row excluded from both
+    assert fa["source_excluded_rows_row_filters"] == 1
+    assert fa["target_excluded_rows_row_filters"] == 1
+
+
+def test_row_filters_op_contains():
+    src = _write_csv("id,name\n1,Alice Smith\n2,Bob Jones\n")
+    tgt = _write_csv("id,name\n1,Alice Smith\n2,Bob Jones\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "name", "op": "contains", "value": "Jones"}],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+def test_row_filters_op_regex():
+    src = _write_csv("id,code\n1,ABC-123\n2,XYZ-456\n3,ABC-789\n")
+    tgt = _write_csv("id,code\n1,ABC-123\n2,XYZ-456\n3,ABC-789\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "include",
+                "rules": [{"column": "code", "op": "regex", "pattern": "^ABC"}],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    fa = result["details"]["filters_applied"]
+    # XYZ-456 excluded
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+def test_row_filters_op_is_null():
+    # DuckDB read_csv_auto with all_varchar=true treats empty fields as NULL
+    src = _write_csv("id,note\n1,hello\n2,\n")
+    tgt = _write_csv("id,note\n1,hello\n2,\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "note", "op": "is_null"}],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    fa = result["details"]["filters_applied"]
+    # Empty CSV field is NULL in DuckDB, so is_null matches row 2
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+def test_row_filters_op_not_null():
+    src = _write_csv("id,note\n1,hello\n2,world\n")
+    tgt = _write_csv("id,note\n1,hello\n2,world\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "include",
+                "rules": [{"column": "note", "op": "not_null"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    # All rows have non-null note, so nothing excluded
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Row filters - case_insensitive/trim per-rule
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_case_insensitive_per_rule():
+    """Per-rule case_insensitive should work independently of compare config."""
+    src = _write_csv("id,status\n1,Active\n2,CANCELLED\n")
+    tgt = _write_csv("id,status\n1,Active\n2,CANCELLED\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        compare={"case_insensitive": False},
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [
+                    {
+                        "column": "status",
+                        "op": "equals",
+                        "value": "cancelled",
+                        "case_insensitive": True,
+                    }
+                ],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - missing column error
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_missing_column():
+    src = _write_csv("id,name\n1,Alice\n")
+    tgt = _write_csv("id,name\n1,Alice\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "rules": [{"column": "nonexistent", "op": "equals", "value": "x"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 2
+    assert result["error"]["code"] == "INVALID_ROW_FILTERS"
+
+
+# ---------------------------------------------------------------------------
+# Row filters - combined with exclude_keys
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_combined_with_exclude_keys():
+    """Both exclude_keys and row_filters should work together."""
+    src = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,200\n3,ACTIVE,300\n")
+    tgt = _write_csv("id,status,value\n1,ACTIVE,100\n2,CANCELLED,999\n3,ACTIVE,999\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "exclude_keys": [{"id": "3"}],
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [{"column": "status", "op": "equals", "value": "CANCELLED"}],
+            },
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    # id=3 excluded by exclude_keys, id=2 excluded by row_filters
+    # Only id=1 remains, which matches -> exit 0
+    assert exit_code == 0
+    fa = result["details"]["filters_applied"]
+    assert fa["exclude_keys_count"] == 1
+    assert fa["source_excluded_rows"] >= 2  # total from both
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - no rules = no-op
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_empty_rules_noop():
+    """Empty rules list should not filter anything."""
+    src = _write_csv("id,name\n1,Alice\n2,Bob\n")
+    tgt = _write_csv("id,name\n1,Alice\n2,Bobby\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {"rules": []},
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - multiple rules (AND)
+# ---------------------------------------------------------------------------
+
+
+def test_row_filters_multiple_rules_and():
+    """Multiple rules are combined with AND."""
+    src = _write_csv("id,status,region\n1,ACTIVE,US\n2,CANCELLED,US\n3,CANCELLED,EU\n")
+    tgt = _write_csv("id,status,region\n1,ACTIVE,US\n2,CANCELLED,US\n3,CANCELLED,EU\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        filters={
+            "row_filters": {
+                "mode": "exclude",
+                "rules": [
+                    {"column": "status", "op": "equals", "value": "CANCELLED"},
+                    {"column": "region", "op": "equals", "value": "US"},
+                ],
+            },
+        },
+    )
+    result, _exit_code = compare_tabular(cfg)
+    fa = result["details"]["filters_applied"]
+    # Only id=2 matches BOTH (CANCELLED AND US)
+    assert fa["source_excluded_rows_row_filters"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Row filters - SQL builder determinism
+# ---------------------------------------------------------------------------
+
+
+def test_row_filter_builder_deterministic():
+    """SQL builder should produce consistent output."""
+    from reconify.tabular_engine import _build_row_filter_predicate
+
+    rules = [
+        RowFilterRule(column="status", op="equals", value="CANCELLED"),
+        RowFilterRule(column="region", op="in", values=["US", "EU"]),
+    ]
+    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
+
+    pred1, params1 = _build_row_filter_predicate(rules, cfg)
+    pred2, params2 = _build_row_filter_predicate(rules, cfg)
+
+    assert pred1 == pred2
+    assert params1 == params2
+    assert "?" in pred1
+    assert len(params1) == 3  # "CANCELLED", "US", "EU"
+
+
+def test_row_filter_builder_uses_param_binding():
+    """Values should be passed as params, not interpolated into SQL."""
+    from reconify.tabular_engine import _build_row_filter_predicate
+
+    rules = [
+        RowFilterRule(column="name", op="equals", value="O'Brien"),
+    ]
+    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
+
+    pred, params = _build_row_filter_predicate(rules, cfg)
+    # The value should NOT appear in the SQL string
+    assert "O'Brien" not in pred
+    assert "O'Brien" in params[0]  # lowered or not based on case_insensitive
