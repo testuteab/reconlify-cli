@@ -195,6 +195,8 @@ def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
         format=result["details"]["format"],
         keys=result["details"]["keys"],
         compared_columns=result["details"]["compared_columns"],
+        read_rows_source=result["details"]["read_rows_source"],
+        read_rows_target=result["details"]["read_rows_target"],
         filters_applied=TabularFiltersApplied(**result["details"]["filters_applied"]),
     )
 

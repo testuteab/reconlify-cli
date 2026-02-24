@@ -50,6 +50,8 @@ def _error_result(
             "format": config.format,
             "keys": list(config.keys),
             "compared_columns": [],
+            "read_rows_source": 0,
+            "read_rows_target": 0,
             "filters_applied": _empty_filters_applied(config),
         },
         "samples": {
@@ -393,10 +395,13 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
     )
     exit_code = 1 if has_diffs else 0
 
+    source_post_filter = source_total - source_excluded_rows - src_excluded_rf
+    target_post_filter = target_total - target_excluded_rows - tgt_excluded_rf
+
     report: dict[str, Any] = {
         "summary": {
-            "source_rows": source_total,
-            "target_rows": target_total,
+            "source_rows": source_post_filter,
+            "target_rows": target_post_filter,
             "missing_in_target": missing_in_target_count,
             "missing_in_source": missing_in_source_count,
             "rows_with_mismatches": rows_with_mismatches,
@@ -407,6 +412,8 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
             "format": config.format,
             "keys": list(keys),
             "compared_columns": compared_columns,
+            "read_rows_source": source_total,
+            "read_rows_target": target_total,
             "filters_applied": _build_filters_applied(
                 config,
                 source_excluded_rows,
@@ -716,16 +723,22 @@ def _compute_column_stats(
 def _empty_filters_applied(config: TabularConfig) -> dict[str, Any]:
     """Return zeroed-out filters_applied dict."""
     rf = config.filters.row_filters
-    return {
+    result: dict[str, Any] = {
         "exclude_keys_count": len(config.filters.exclude_keys),
         "source_excluded_rows": 0,
         "target_excluded_rows": 0,
-        "row_filters_count": len(rf.rules) if rf else 0,
-        "row_filters_apply_to": rf.apply_to if rf else "both",
-        "row_filters_mode": rf.mode if rf else "exclude",
+        "source_excluded_rows_exclude_keys": 0,
+        "target_excluded_rows_exclude_keys": 0,
         "source_excluded_rows_row_filters": 0,
         "target_excluded_rows_row_filters": 0,
     }
+    if rf and rf.rules:
+        result["row_filters"] = {
+            "count": len(rf.rules),
+            "apply_to": rf.apply_to,
+            "mode": rf.mode,
+        }
+    return result
 
 
 def _build_filters_applied(
@@ -737,16 +750,22 @@ def _build_filters_applied(
 ) -> dict[str, Any]:
     """Build the filters_applied dict for the report."""
     rf = config.filters.row_filters
-    return {
+    result: dict[str, Any] = {
         "exclude_keys_count": len(config.filters.exclude_keys),
         "source_excluded_rows": source_excluded_ek + source_excluded_rf,
         "target_excluded_rows": target_excluded_ek + target_excluded_rf,
-        "row_filters_count": len(rf.rules) if rf else 0,
-        "row_filters_apply_to": rf.apply_to if rf else "both",
-        "row_filters_mode": rf.mode if rf else "exclude",
+        "source_excluded_rows_exclude_keys": source_excluded_ek,
+        "target_excluded_rows_exclude_keys": target_excluded_ek,
         "source_excluded_rows_row_filters": source_excluded_rf,
         "target_excluded_rows_row_filters": target_excluded_rf,
     }
+    if rf and rf.rules:
+        result["row_filters"] = {
+            "count": len(rf.rules),
+            "apply_to": rf.apply_to,
+            "mode": rf.mode,
+        }
+    return result
 
 
 def _build_rule_expr(

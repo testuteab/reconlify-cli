@@ -10,6 +10,7 @@ from typing import Literal
 from reconify.models import (
     ReconError,
     ReconReport,
+    RowFiltersInfo,
     TabularConfig,
     TabularDetails,
     TabularFiltersApplied,
@@ -43,15 +44,13 @@ def build_report(cfg: TabularConfig | TextConfig) -> ReconReport:
                 keys=list(cfg.keys),
                 filters_applied=TabularFiltersApplied(
                     exclude_keys_count=len(cfg.filters.exclude_keys),
-                    row_filters_count=(
-                        len(cfg.filters.row_filters.rules) if cfg.filters.row_filters else 0
-                    ),
-                    row_filters_apply_to=(
-                        cfg.filters.row_filters.apply_to if cfg.filters.row_filters else "both"
-                    ),
-                    row_filters_mode=(
-                        cfg.filters.row_filters.mode if cfg.filters.row_filters else "exclude"
-                    ),
+                    row_filters=RowFiltersInfo(
+                        count=len(cfg.filters.row_filters.rules),
+                        apply_to=cfg.filters.row_filters.apply_to,
+                        mode=cfg.filters.row_filters.mode,
+                    )
+                    if (cfg.filters.row_filters and cfg.filters.row_filters.rules)
+                    else None,
                 ),
             ),
         )
@@ -123,12 +122,13 @@ def write_report(report: ReconReport, path: str) -> None:
         if key in data and data[key] is None:
             del data[key]
     details = data.get("details")
-    if (
-        isinstance(details, dict)
-        and "unordered_stats" in details
-        and details["unordered_stats"] is None
-    ):
-        del details["unordered_stats"]
+    if isinstance(details, dict):
+        if "unordered_stats" in details and details["unordered_stats"] is None:
+            del details["unordered_stats"]
+        # Omit row_filters from filters_applied when not enabled
+        fa = details.get("filters_applied")
+        if isinstance(fa, dict) and "row_filters" in fa and fa["row_filters"] is None:
+            del fa["row_filters"]
 
     with open(path, "w") as f:
         json.dump(data, f, indent=2)

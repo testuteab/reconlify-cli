@@ -11,7 +11,7 @@ Root:
   "config_hash": "sha256 of canonical config JSON",
   "summary": {...},
   "details": {...},
-  "samples": [...],
+  "samples": [...] | {...},
   "samples_agg": [...] | absent,
   "error": {...} | absent
 }
@@ -25,7 +25,7 @@ Present only when exit code is 2 (config or runtime error).
 error:
 
 {
-  "code": "CONFIG_VALIDATION_ERROR" | "RUNTIME_ERROR",
+  "code": "CONFIG_VALIDATION_ERROR" | "RUNTIME_ERROR" | "DUPLICATE_KEYS" | "INVALID_ROW_FILTERS",
   "message": string,
   "details": string
 }
@@ -39,48 +39,169 @@ When error is present:
 
 # TABULAR REPORT
 
-summary:
+## summary
 
 {
-  "total_rows_source": int,
-  "total_rows_target": int,
-  "matched_rows": int,
-  "missing_in_source": int,
+  "source_rows": int,
+  "target_rows": int,
   "missing_in_target": int,
-  "different_rows": int,
+  "missing_in_source": int,
+  "rows_with_mismatches": int,
+  "mismatched_cells": int,
   "comparison_time_seconds": float
 }
 
-details:
+- `source_rows` / `target_rows`: rows **after** filtering (exclude_keys + row_filters).
+
+## details
 
 {
-  "column_stats": {
+  "format": "csv",
+  "keys": [string, ...],
+  "compared_columns": [string, ...],
+  "read_rows_source": int,
+  "read_rows_target": int,
+  "filters_applied": { ... },
+  "column_stats": { ... }
+}
+
+- `read_rows_source` / `read_rows_target`: total rows read from the raw CSV
+  files **before** any filtering.
+
+Invariant:
+
+  read_rows_source - filters_applied.source_excluded_rows == summary.source_rows
+  read_rows_target - filters_applied.target_excluded_rows == summary.target_rows
+
+### details.filters_applied
+
+Totals (always present):
+
+- `source_excluded_rows`: int — total excluded rows from ALL exclusion mechanisms
+- `target_excluded_rows`: int — same for target
+
+Breakdown (always present, default 0):
+
+- `source_excluded_rows_exclude_keys`: int
+- `target_excluded_rows_exclude_keys`: int
+- `source_excluded_rows_row_filters`: int
+- `target_excluded_rows_row_filters`: int
+
+Invariant:
+  source_excluded_rows = source_excluded_rows_exclude_keys + source_excluded_rows_row_filters
+  target_excluded_rows = target_excluded_rows_exclude_keys + target_excluded_rows_row_filters
+
+Exclude-keys info (always present):
+
+- `exclude_keys_count`: int — number of exclude_keys entries in config
+
+Row-filters info (ONLY present when enabled):
+
+- `row_filters`: object | absent
+
+Present only when config.filters.row_filters exists AND contains at least 1 rule.
+When not enabled, the `row_filters` key is omitted entirely.
+
+{
+  "row_filters": {
+    "count": int,
+    "apply_to": "both" | "source" | "target",
+    "mode": "exclude" | "include"
+  }
+}
+
+Example (with row_filters enabled):
+
+{
+  "exclude_keys_count": 1,
+  "source_excluded_rows": 3,
+  "target_excluded_rows": 2,
+  "source_excluded_rows_exclude_keys": 1,
+  "target_excluded_rows_exclude_keys": 1,
+  "source_excluded_rows_row_filters": 2,
+  "target_excluded_rows_row_filters": 1,
+  "row_filters": {
+    "count": 2,
+    "apply_to": "both",
+    "mode": "exclude"
+  }
+}
+
+Example (without row_filters):
+
+{
+  "exclude_keys_count": 0,
+  "source_excluded_rows": 0,
+  "target_excluded_rows": 0,
+  "source_excluded_rows_exclude_keys": 0,
+  "target_excluded_rows_exclude_keys": 0,
+  "source_excluded_rows_row_filters": 0,
+  "target_excluded_rows_row_filters": 0
+}
+
+### details.column_stats
+
+Per-column mismatch counts for matched rows.
+Present when output.include_column_stats is true (default) and there are compared columns.
+
+{
+  "column_name": {
+    "mismatched_count": int
+  }
+}
+
+## samples
+
+Tabular samples is a dict with four categories:
+
+{
+  "missing_in_target": [ ... ],
+  "missing_in_source": [ ... ],
+  "value_mismatches": [ ... ],
+  "excluded": [ ... ]
+}
+
+Each category is limited by sampling.sample_limit_per_type (or sampling.sample_limit).
+When output.include_row_samples is false, all lists are empty.
+Entries within each list are sorted by key values ascending for determinism.
+
+### missing_in_target / missing_in_source
+
+{
+  "line_number_source": int,        (or line_number_target for missing_in_source)
+  "key": {"column": value, ...},
+  "row": {"column": value, ...}
+}
+
+### value_mismatches
+
+{
+  "line_number_source": int,
+  "line_number_target": int,
+  "key": {"column": value, ...},
+  "columns": {
     "column_name": {
-      "differences": int,
-      "tolerance_applied": float | null
+      "source": value,
+      "target": value
     }
   }
 }
 
-samples:
+### excluded
 
-[
-  {
-    "key": {"column": value},
-    "differences": {
-      "column_name": {
-        "source": value,
-        "target": value
-      }
-    }
-  }
-]
+{
+  "side": "source" | "target",
+  "key": {"column": value, ...},
+  "line_number_source": int,        (or line_number_target for target side)
+  "row": {"column": value, ...},
+  "reason": "exclude_keys" | "row_filters"
+}
 
 ---
 
 # TEXT REPORT
 
-summary:
+## summary
 
 {
   "total_lines_source": int,
@@ -89,7 +210,7 @@ summary:
   "comparison_time_seconds": float
 }
 
-details:
+## details
 
 {
   "mode": "line_by_line" | "unordered_lines",

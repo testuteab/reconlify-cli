@@ -199,21 +199,29 @@ class TabularSummary(BaseModel):
     comparison_time_seconds: float = 0.0
 
 
+class RowFiltersInfo(BaseModel):
+    count: int
+    apply_to: str
+    mode: str
+
+
 class TabularFiltersApplied(BaseModel):
     exclude_keys_count: int = 0
     source_excluded_rows: int = 0
     target_excluded_rows: int = 0
-    row_filters_count: int = 0
-    row_filters_apply_to: str = "both"
-    row_filters_mode: str = "exclude"
+    source_excluded_rows_exclude_keys: int = 0
+    target_excluded_rows_exclude_keys: int = 0
     source_excluded_rows_row_filters: int = 0
     target_excluded_rows_row_filters: int = 0
+    row_filters: RowFiltersInfo | None = None
 
 
 class TabularDetails(BaseModel):
     format: str = "csv"
     keys: list[str] = Field(default_factory=list)
     compared_columns: list[str] = Field(default_factory=list)
+    read_rows_source: int = 0
+    read_rows_target: int = 0
     filters_applied: TabularFiltersApplied = Field(default_factory=TabularFiltersApplied)
     column_stats: dict[str, Any] = Field(default_factory=dict)
 

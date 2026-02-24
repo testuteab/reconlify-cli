@@ -180,8 +180,16 @@ def test_exclude_keys_suppresses_mismatch():
     )
     result, exit_code = compare_tabular(cfg)
     assert exit_code == 0
-    assert result["details"]["filters_applied"]["source_excluded_rows"] == 1
-    assert result["details"]["filters_applied"]["target_excluded_rows"] == 1
+    fa = result["details"]["filters_applied"]
+    assert fa["source_excluded_rows"] == 1
+    assert fa["target_excluded_rows"] == 1
+    assert fa["source_excluded_rows_exclude_keys"] == 1
+    assert fa["target_excluded_rows_exclude_keys"] == 1
+    # read_rows = raw, source_rows = post-filter
+    assert result["details"]["read_rows_source"] == 2
+    assert result["summary"]["source_rows"] == 1
+    expected = result["details"]["read_rows_source"] - fa["source_excluded_rows"]
+    assert expected == result["summary"]["source_rows"]
 
 
 def test_exclude_keys_before_duplicate_validation():
@@ -350,7 +358,15 @@ def test_report_structure():
     assert result["details"]["keys"] == ["id"]
     assert "compared_columns" in result["details"]
     assert "filters_applied" in result["details"]
+    fa = result["details"]["filters_applied"]
+    assert "row_filters" not in fa
+    assert fa["source_excluded_rows_row_filters"] == 0
+    assert fa["target_excluded_rows_row_filters"] == 0
     assert result["summary"]["comparison_time_seconds"] > 0
+    # read_rows fields present and equal summary rows (no filtering)
+    assert result["details"]["read_rows_source"] == 1
+    assert result["details"]["read_rows_target"] == 1
+    assert result["details"]["read_rows_source"] == result["summary"]["source_rows"]
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +380,8 @@ def test_missing_source_file():
     result, exit_code = compare_tabular(cfg)
     assert exit_code == 2
     assert result["error"]["code"] == "RUNTIME_ERROR"
+    assert result["details"]["read_rows_source"] == 0
+    assert result["details"]["read_rows_target"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -411,11 +429,14 @@ def test_row_filters_exclude_both():
     result, exit_code = compare_tabular(cfg)
     assert exit_code == 0
     fa = result["details"]["filters_applied"]
-    assert fa["row_filters_count"] == 1
+    assert fa["row_filters"] == {"count": 1, "apply_to": "both", "mode": "exclude"}
     assert fa["source_excluded_rows_row_filters"] == 1
     assert fa["target_excluded_rows_row_filters"] == 1
-    assert fa["row_filters_mode"] == "exclude"
-    assert fa["row_filters_apply_to"] == "both"
+    # read_rows = 3, excluded = 1, source_rows = 2
+    assert result["details"]["read_rows_source"] == 3
+    assert result["summary"]["source_rows"] == 2
+    expected = result["details"]["read_rows_source"] - fa["source_excluded_rows"]
+    assert expected == result["summary"]["source_rows"]
 
 
 def test_row_filters_exclude_with_samples():
@@ -468,7 +489,7 @@ def test_row_filters_include_mode():
     fa = result["details"]["filters_applied"]
     assert fa["source_excluded_rows_row_filters"] == 1
     assert fa["target_excluded_rows_row_filters"] == 1
-    assert fa["row_filters_mode"] == "include"
+    assert fa["row_filters"]["mode"] == "include"
 
 
 # ---------------------------------------------------------------------------
@@ -748,8 +769,14 @@ def test_row_filters_combined_with_exclude_keys():
     assert exit_code == 0
     fa = result["details"]["filters_applied"]
     assert fa["exclude_keys_count"] == 1
-    assert fa["source_excluded_rows"] >= 2  # total from both
+    assert fa["source_excluded_rows_exclude_keys"] == 1
     assert fa["source_excluded_rows_row_filters"] == 1
+    assert fa["source_excluded_rows"] == 2  # total from both
+    # read_rows = 3, excluded = 2 (1 EK + 1 RF), source_rows = 1
+    assert result["details"]["read_rows_source"] == 3
+    assert result["summary"]["source_rows"] == 1
+    expected = result["details"]["read_rows_source"] - fa["source_excluded_rows"]
+    assert expected == result["summary"]["source_rows"]
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +800,7 @@ def test_row_filters_empty_rules_noop():
     result, exit_code = compare_tabular(cfg)
     assert exit_code == 1
     assert result["summary"]["rows_with_mismatches"] == 1
+    assert "row_filters" not in result["details"]["filters_applied"]
 
 
 # ---------------------------------------------------------------------------
