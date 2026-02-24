@@ -1,0 +1,14 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+filters:
+  row_filters:
+    mode: exclude
+    rules:
+      - column: region
+        op: in
+        values:
+          - EU
+          - APAC

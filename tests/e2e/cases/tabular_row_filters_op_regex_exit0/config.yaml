@@ -1,0 +1,12 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+filters:
+  row_filters:
+    mode: exclude
+    rules:
+      - column: name
+        op: regex
+        pattern: "^test_"

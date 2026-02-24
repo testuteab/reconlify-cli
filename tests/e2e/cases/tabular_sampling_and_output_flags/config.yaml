@@ -1,0 +1,10 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+sampling:
+  sample_limit_per_type: 2
+output:
+  include_row_samples: true
+  include_column_stats: false

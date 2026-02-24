@@ -1,0 +1,12 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+compare:
+  trim_whitespace: true
+  case_insensitive: true
+  normalize_nulls:
+    - ""
+    - "NULL"
+    - "null"

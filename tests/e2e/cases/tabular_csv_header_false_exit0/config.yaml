@@ -1,0 +1,10 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - column0
+compare:
+  include_columns:
+    - column1
+csv:
+  header: false
