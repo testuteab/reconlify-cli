@@ -1,0 +1,4 @@
+type: text
+source: does_not_exist_source.txt
+target: target.txt
+mode: line_by_line

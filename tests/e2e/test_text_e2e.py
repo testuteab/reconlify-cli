@@ -9,6 +9,52 @@ from __future__ import annotations
 import pytest
 
 # ---------------------------------------------------------------------------
+# Shared assertion helpers
+# ---------------------------------------------------------------------------
+
+_SUMMARY_FIELDS = (
+    "total_lines_source",
+    "total_lines_target",
+    "different_lines",
+    "comparison_time_seconds",
+)
+
+
+def _assert_text_base(report):
+    """Validate common text report structure."""
+    assert report["type"] == "text"
+    s = report["summary"]
+    for field in ("total_lines_source", "total_lines_target", "different_lines"):
+        assert field in s, f"summary.{field} missing"
+        assert isinstance(s[field], int), f"summary.{field} not int"
+    assert "comparison_time_seconds" in s
+    assert isinstance(s["comparison_time_seconds"], (int, float))
+
+
+def _assert_line_by_line_samples(report):
+    """Assert line_by_line samples structure."""
+    assert isinstance(report["samples"], list)
+    for sample in report["samples"]:
+        assert "line_number_source" in sample
+        assert "line_number_target" in sample
+        assert "source" in sample
+        assert "target" in sample
+
+
+def _assert_unordered_report(report):
+    """Assert unordered_lines report structure."""
+    assert report["samples"] == []
+    if report["summary"]["different_lines"] > 0:
+        assert "samples_agg" in report
+        assert isinstance(report["samples_agg"], list)
+    stats = report["details"].get("unordered_stats")
+    if stats is not None:
+        assert isinstance(stats["source_only_lines"], int)
+        assert isinstance(stats["target_only_lines"], int)
+        assert isinstance(stats["distinct_mismatched_lines"], int)
+
+
+# ---------------------------------------------------------------------------
 # line_by_line mode
 # ---------------------------------------------------------------------------
 
@@ -19,7 +65,7 @@ class TestLineByLineE2E:
         """Identical files -> exit 0, no diffs, no samples."""
         ec, r = e2e_runner("text_line_by_line_identical")
         assert ec == 0
-        assert r["type"] == "text"
+        _assert_text_base(r)
         assert r["version"] == "1.1"
         assert r["summary"]["different_lines"] == 0
         assert r["summary"]["total_lines_source"] == 3
@@ -27,17 +73,20 @@ class TestLineByLineE2E:
         assert r["samples"] == []
         assert "samples_agg" not in r
         assert "error" not in r
+        _assert_line_by_line_samples(r)
 
     def test_original_line_numbers(self, e2e_runner):
         """Dropped lines -> line_number_* reflects original file positions."""
         ec, r = e2e_runner("text_line_by_line_original_line_numbers")
         assert ec == 1
+        _assert_text_base(r)
         assert r["summary"]["different_lines"] == 1
         assert r["details"]["mode"] == "line_by_line"
         assert r["details"]["rules_applied"]["drop_lines_count"] == 2
 
         s = r["samples"]
         assert len(s) == 1
+        _assert_line_by_line_samples(r)
         # source "bbb" is on raw line 4 (lines 1 and 3 are dropped comments)
         assert s[0]["line_number_source"] == 4
         assert s[0]["line_number_target"] == 2
@@ -53,6 +102,7 @@ class TestLineByLineE2E:
             cli_flags=["--debug-report"],
         )
         assert ec == 1
+        _assert_text_base(r)
         assert r["summary"]["different_lines"] == 2
 
         s = r["samples"]
@@ -78,10 +128,12 @@ class TestLineByLineE2E:
         """When target is shorter, line_number_target is null in JSON."""
         ec, r = e2e_runner("text_line_by_line_missing_lines")
         assert ec == 1
+        _assert_text_base(r)
         assert r["summary"]["different_lines"] == 2
 
         s = r["samples"]
         assert len(s) == 2
+        _assert_line_by_line_samples(r)
         # Both samples have null line_number_target
         assert s[0]["line_number_source"] == 2
         assert s[0]["line_number_target"] is None
@@ -103,9 +155,10 @@ class TestUnorderedE2E:
         """Aggregated samples with correct counts, line numbers, and ordering."""
         ec, r = e2e_runner("text_unordered_counts_and_agg")
         assert ec == 1
+        _assert_text_base(r)
         assert r["details"]["mode"] == "unordered_lines"
         assert r["summary"]["different_lines"] == 4
-        assert r["samples"] == []
+        _assert_unordered_report(r)
 
         agg = r["samples_agg"]
         assert len(agg) == 2
@@ -138,6 +191,8 @@ class TestUnorderedE2E:
             cli_flags=["--no-include-line-numbers"],
         )
         assert ec == 1
+        _assert_text_base(r)
+        _assert_unordered_report(r)
         agg = r["samples_agg"]
         assert len(agg) == 2
         assert "source_line_numbers" not in agg[0]
@@ -152,6 +207,8 @@ class TestUnorderedE2E:
             cli_flags=["--max-line-numbers", "5"],
         )
         assert ec == 1
+        _assert_text_base(r)
+        _assert_unordered_report(r)
         agg = r["samples_agg"]
         assert len(agg) == 1
         assert agg[0]["line"] == "x"
@@ -178,6 +235,7 @@ class TestNormalizationE2E:
             target_bytes=b"aaa\nbbb\nccc\n",
         )
         assert ec == 0
+        _assert_text_base(r)
         assert r["summary"]["different_lines"] == 0
         assert r["summary"]["total_lines_source"] == 3
         assert r["summary"]["total_lines_target"] == 3
@@ -190,21 +248,26 @@ class TestNormalizationE2E:
             target_bytes=b"aaa\nbbb\nccc\n",
         )
         assert ec == 1
+        _assert_text_base(r)
         # All 3 lines differ: "aaa\r" != "aaa", etc.
         assert r["summary"]["different_lines"] == 3
+        _assert_line_by_line_samples(r)
 
     def test_trim_lines_false_unordered(self, e2e_runner):
         """trim_lines=false (default): leading whitespace causes mismatch."""
         ec, r = e2e_runner("text_trim_lines_false_unordered")
         assert ec == 1
+        _assert_text_base(r)
         assert r["details"]["mode"] == "unordered_lines"
         # "  aaa" != "aaa", "  bbb" != "bbb" -> 4 different lines
         assert r["summary"]["different_lines"] == 4
+        _assert_unordered_report(r)
 
     def test_ignore_blank_lines(self, e2e_runner):
         """ignore_blank_lines=true: blank lines are filtered out before comparison."""
         ec, r = e2e_runner("text_ignore_blank_lines")
         assert ec == 0
+        _assert_text_base(r)
         assert r["summary"]["total_lines_source"] == 2
         assert r["summary"]["total_lines_target"] == 2
         assert r["summary"]["different_lines"] == 0
@@ -221,6 +284,7 @@ class TestRulesE2E:
         """Combined replace_regex, drop_lines_regex, trim, collapse in unordered mode."""
         ec, r = e2e_runner("text_replace_and_drop_rules")
         assert ec == 0
+        _assert_text_base(r)
         assert r["summary"]["different_lines"] == 0
         assert r["details"]["mode"] == "unordered_lines"
         assert r["details"]["rules_applied"]["drop_lines_count"] > 0
@@ -244,6 +308,8 @@ class TestPerformanceE2E:
             target_bytes=b"",
         )
         assert ec == 1
+        _assert_text_base(r)
+        _assert_unordered_report(r)
         assert r["summary"]["different_lines"] == 5000
         assert len(r["samples_agg"]) == 10
         assert r["details"]["unordered_stats"]["distinct_mismatched_lines"] == 5000
@@ -252,3 +318,153 @@ class TestPerformanceE2E:
             assert sample["line"] == f"line_{i:05d}"
             assert sample["source_count"] == 1
             assert sample["target_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# NEW: normalize.collapse_whitespace
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestCollapseWhitespaceE2E:
+    def test_collapse_whitespace_true_exit0(self, e2e_runner):
+        """collapse_whitespace=true normalizes tabs + multi-space to single space."""
+        ec, r = e2e_runner("text_collapse_whitespace_true_exit0")
+        assert ec == 0
+        _assert_text_base(r)
+        assert r["details"]["mode"] == "line_by_line"
+        assert r["summary"]["different_lines"] == 0
+        assert r["summary"]["total_lines_source"] == 1
+        assert r["summary"]["total_lines_target"] == 1
+        assert r["samples"] == []
+        assert "error" not in r
+        _assert_line_by_line_samples(r)
+
+
+# ---------------------------------------------------------------------------
+# NEW: normalize.case_insensitive
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestCaseInsensitiveE2E:
+    def test_case_insensitive_true_exit0(self, e2e_runner):
+        """case_insensitive=true lowercases both sides before comparison."""
+        ec, r = e2e_runner("text_case_insensitive_true_exit0")
+        assert ec == 0
+        _assert_text_base(r)
+        assert r["details"]["mode"] == "line_by_line"
+        assert r["summary"]["different_lines"] == 0
+        assert r["summary"]["total_lines_source"] == 1
+        assert r["summary"]["total_lines_target"] == 1
+        assert r["samples"] == []
+        assert "error" not in r
+        _assert_line_by_line_samples(r)
+
+
+# ---------------------------------------------------------------------------
+# NEW: normalize.trim_lines in line_by_line mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTrimLinesLineByLineE2E:
+    def test_trim_lines_true_exit0(self, e2e_runner):
+        """trim_lines=true strips trailing whitespace in line_by_line mode."""
+        ec, r = e2e_runner("text_trim_lines_true_line_by_line_exit0")
+        assert ec == 0
+        _assert_text_base(r)
+        assert r["details"]["mode"] == "line_by_line"
+        assert r["summary"]["different_lines"] == 0
+        assert r["summary"]["total_lines_source"] == 2
+        assert r["summary"]["total_lines_target"] == 2
+        assert r["samples"] == []
+        assert "error" not in r
+        _assert_line_by_line_samples(r)
+
+
+# ---------------------------------------------------------------------------
+# NEW: sample_limit truncation (line_by_line)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestSampleLimitTruncationE2E:
+    def test_sample_limit_truncation(self, e2e_runner):
+        """--sample-limit 2 caps samples list at 2 even with 5 mismatches."""
+        ec, r = e2e_runner(
+            "text_sample_limit_truncation_line_by_line",
+            cli_flags=["--sample-limit", "2"],
+        )
+        assert ec == 1
+        _assert_text_base(r)
+        assert r["details"]["mode"] == "line_by_line"
+        assert r["summary"]["different_lines"] == 5
+        assert isinstance(r["samples"], list)
+        assert len(r["samples"]) == 2
+        _assert_line_by_line_samples(r)
+        assert "error" not in r
+
+
+# ---------------------------------------------------------------------------
+# NEW: sample_limit truncation (unordered_lines)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestSampleLimitTruncationUnorderedE2E:
+    def test_sample_limit_truncation_unordered_agg(self, e2e_runner):
+        """--sample-limit 2 caps samples_agg to top-2 by abs diff."""
+        ec, r = e2e_runner(
+            "text_sample_limit_truncation_unordered_agg",
+            cli_flags=["--sample-limit", "2"],
+        )
+        assert ec == 1
+        _assert_text_base(r)
+        _assert_unordered_report(r)
+        assert r["details"]["mode"] == "unordered_lines"
+        assert r["summary"]["different_lines"] == 7
+        assert r["samples"] == []
+
+        agg = r["samples_agg"]
+        assert len(agg) == 2
+
+        # Top-1: D has abs diff 3 (source=0, target=3)
+        assert agg[0]["line"] == "D"
+        assert agg[0]["source_count"] == 0
+        assert agg[0]["target_count"] == 3
+        assert agg[0]["source_line_numbers"] == []
+        assert agg[0]["target_line_numbers"] == [3, 4, 5]
+
+        # Top-2: A has abs diff 2 (source=3, target=1)
+        assert agg[1]["line"] == "A"
+        assert agg[1]["source_count"] == 3
+        assert agg[1]["target_count"] == 1
+        assert agg[1]["source_line_numbers"] == [1, 2, 3]
+        assert agg[1]["target_line_numbers"] == [1]
+
+        # unordered_stats reflects all 4 distinct mismatched lines
+        stats = r["details"]["unordered_stats"]
+        assert stats["distinct_mismatched_lines"] == 4
+        assert "error" not in r
+
+
+# ---------------------------------------------------------------------------
+# NEW: runtime error (missing source file)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestRuntimeErrorE2E:
+    def test_missing_file_exit2(self, e2e_runner):
+        """Non-existent source file -> exit 2 with error in report."""
+        ec, r = e2e_runner("text_runtime_error_missing_file_exit2")
+        assert ec == 2
+        _assert_text_base(r)
+        assert "error" in r
+        assert r["error"]["code"] == "RUNTIME_ERROR"
+        assert "Failed to read file" in r["error"]["message"]
+        # Summary is zeroed on error
+        assert r["summary"]["total_lines_source"] == 0
+        assert r["summary"]["total_lines_target"] == 0
+        assert r["summary"]["different_lines"] == 0

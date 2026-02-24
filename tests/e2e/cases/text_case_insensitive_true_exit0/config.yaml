@@ -1,0 +1,10 @@
+type: text
+source: source.txt
+target: target.txt
+mode: line_by_line
+normalize:
+  case_insensitive: true
+  collapse_whitespace: false
+  trim_lines: false
+  ignore_blank_lines: false
+  normalize_newlines: true

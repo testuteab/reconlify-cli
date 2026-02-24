@@ -1,0 +1,12 @@
+type: text
+source: source.txt
+target: target.txt
+mode: unordered_lines
+normalize:
+  ignore_blank_lines: false
+  trim_lines: false
+  collapse_whitespace: false
+  case_insensitive: false
+  normalize_newlines: true
+drop_lines_regex: []
+replace_regex: []
