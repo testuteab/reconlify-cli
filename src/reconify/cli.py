@@ -12,6 +12,7 @@ from pydantic import TypeAdapter, ValidationError
 from reconify.models import (
     ReconConfig,
     ReconError,
+    TabularConfig,
     TextConfig,
     UnorderedStats,
 )
@@ -115,13 +116,8 @@ def run(
                 max_line_numbers=max_line_numbers,
                 debug_report=debug_report,
             )
-        else:
-            # Tabular (stub — not yet implemented)
-            report = build_report(cfg)
-            write_report(report, out_path)
-            h = config_hash(cfg)
-            typer.echo(f"Loaded config: {cfg.type}")
-            typer.echo(f"Report written to {out_path} (config_hash={h})")
+        elif isinstance(cfg, TabularConfig):
+            _run_tabular(cfg, out_path)
     except SystemExit:
         raise
     except Exception as exc:
@@ -174,6 +170,40 @@ def _run_text(
     report.samples = result["samples"]
     if result.get("samples_agg") is not None:
         report.samples_agg = result["samples_agg"]
+    if result.get("error"):
+        report.error = ReconError(**result["error"])
+
+    write_report(report, out_path)
+    typer.echo(f"Loaded config: {cfg.type}")
+    typer.echo(f"Report written to {out_path} (config_hash={h})")
+    raise SystemExit(exit_code)
+
+
+def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
+    """Execute tabular engine comparison and write report."""
+    from reconify.models import TabularDetails, TabularFiltersApplied, TabularSummary
+    from reconify.tabular_engine import compare_tabular
+
+    result, exit_code = compare_tabular(cfg)
+
+    h = config_hash(cfg)
+    report = build_report(cfg)
+
+    # Merge engine results into the report
+    report.summary = TabularSummary(**result["summary"])
+    report.details = TabularDetails(
+        format=result["details"]["format"],
+        keys=result["details"]["keys"],
+        compared_columns=result["details"]["compared_columns"],
+        filters_applied=TabularFiltersApplied(**result["details"]["filters_applied"]),
+    )
+
+    # For tabular, samples is a dict of lists
+    report.samples = result["samples"]
+
+    if result.get("column_stats"):
+        report.details.column_stats = result["column_stats"]
+
     if result.get("error"):
         report.error = ReconError(**result["error"])
 

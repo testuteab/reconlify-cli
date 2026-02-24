@@ -45,30 +45,57 @@ class NormStep(BaseModel):
     args: list[Any] = Field(default_factory=list)
 
 
+class TabularCompare(BaseModel):
+    include_columns: list[str] | None = None
+    exclude_columns: list[str] | None = None
+    trim_whitespace: bool = True
+    case_insensitive: bool = False
+    normalize_nulls: list[str] = Field(default_factory=lambda: ["", "NULL", "null"])
+
+
+class TabularFilters(BaseModel):
+    exclude_keys: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TabularCsvOptions(BaseModel):
+    delimiter: str = ","
+    header: bool = True
+    encoding: str = "utf-8"
+
+
+class TabularSampling(BaseModel):
+    sample_limit: int = 200
+    sample_limit_per_type: int | None = None
+
+
+class TabularOutput(BaseModel):
+    include_row_samples: bool = True
+    include_column_stats: bool = True
+
+
 class TabularConfig(BaseModel):
     type: Literal["tabular"]
+    format: Literal["csv"] = "csv"
     source: str
     target: str
-    key: Annotated[list[str], Field(min_length=1)]
-    ignore_columns: list[str] = Field(default_factory=list)
-    tolerance: dict[str, float] = Field(default_factory=dict)
-    string_rules: dict[str, list[StringRule]] = Field(default_factory=dict)
-    normalization: dict[str, list[NormStep]] = Field(default_factory=dict)
+    keys: Annotated[list[str], Field(min_length=1)]
+    compare: TabularCompare = Field(default_factory=TabularCompare)
+    filters: TabularFilters = Field(default_factory=TabularFilters)
+    csv: TabularCsvOptions = Field(default_factory=TabularCsvOptions)
+    sampling: TabularSampling = Field(default_factory=TabularSampling)
+    output: TabularOutput = Field(default_factory=TabularOutput)
 
     @model_validator(mode="after")
-    def _check_normalization_no_generated_refs(self) -> TabularConfig:
-        """Args in normalization steps must not reference generated columns."""
-        generated = set(self.normalization.keys())
-        if not generated:
-            return self
-        for col, steps in self.normalization.items():
-            for step in steps:
-                for arg in step.args:
-                    if isinstance(arg, str) and arg in generated:
-                        raise ValueError(
-                            f"normalization[{col!r}] step {step.op.value} "
-                            f"references generated column {arg!r} in args"
-                        )
+    def _check_exclude_keys(self) -> TabularConfig:
+        """Every exclude_keys entry must contain exactly all key columns."""
+        key_set = set(self.keys)
+        for i, entry in enumerate(self.filters.exclude_keys):
+            entry_keys = set(entry.keys())
+            if entry_keys != key_set:
+                raise ValueError(
+                    f"filters.exclude_keys[{i}] has keys {sorted(entry_keys)} "
+                    f"but expected exactly {sorted(key_set)}"
+                )
         return self
 
 
@@ -118,16 +145,26 @@ ReconConfig = Annotated[TabularConfig | TextConfig, Field(discriminator="type")]
 
 
 class TabularSummary(BaseModel):
-    total_rows_source: int = 0
-    total_rows_target: int = 0
-    matched_rows: int = 0
-    missing_in_source: int = 0
+    source_rows: int = 0
+    target_rows: int = 0
     missing_in_target: int = 0
-    different_rows: int = 0
+    missing_in_source: int = 0
+    rows_with_mismatches: int = 0
+    mismatched_cells: int = 0
     comparison_time_seconds: float = 0.0
 
 
+class TabularFiltersApplied(BaseModel):
+    exclude_keys_count: int = 0
+    source_excluded_rows: int = 0
+    target_excluded_rows: int = 0
+
+
 class TabularDetails(BaseModel):
+    format: str = "csv"
+    keys: list[str] = Field(default_factory=list)
+    compared_columns: list[str] = Field(default_factory=list)
+    filters_applied: TabularFiltersApplied = Field(default_factory=TabularFiltersApplied)
     column_stats: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -168,6 +205,6 @@ class ReconReport(BaseModel):
     config_hash: str
     summary: TabularSummary | TextSummary
     details: TabularDetails | TextDetails
-    samples: list[Any] = Field(default_factory=list)
+    samples: list[Any] | dict[str, Any] = Field(default_factory=list)
     samples_agg: list[Any] | None = None
     error: ReconError | None = None

@@ -7,16 +7,17 @@ from reconify.report import build_report, config_hash
 
 
 def test_tabular_report_structure() -> None:
-    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", key=["id"])
+    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
     report = build_report(cfg)
     data = json.loads(report.model_dump_json())
     assert data["type"] == "tabular"
     assert data["version"] == "1.1"
     assert "generated_at" in data
     assert "config_hash" in data
-    assert data["summary"]["total_rows_source"] == 0
-    assert data["summary"]["matched_rows"] == 0
-    assert data["details"]["column_stats"] == {}
+    assert data["summary"]["source_rows"] == 0
+    assert data["summary"]["missing_in_target"] == 0
+    assert data["details"]["keys"] == ["id"]
+    assert data["details"]["format"] == "csv"
     assert data["samples"] == []
 
 
@@ -30,12 +31,12 @@ def test_text_report_structure() -> None:
 
 
 def test_config_hash_deterministic() -> None:
-    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", key=["id"])
+    cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
     assert config_hash(cfg) == config_hash(cfg)
     assert len(config_hash(cfg)) == 64  # SHA-256 hex
 
 
 def test_config_hash_differs_for_different_configs() -> None:
-    cfg1 = TabularConfig(type="tabular", source="a.csv", target="b.csv", key=["id"])
-    cfg2 = TabularConfig(type="tabular", source="a.csv", target="b.csv", key=["id", "name"])
+    cfg1 = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
+    cfg2 = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id", "name"])
     assert config_hash(cfg1) != config_hash(cfg2)

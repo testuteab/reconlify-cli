@@ -19,13 +19,15 @@ def test_tabular_minimal() -> None:
             "type": "tabular",
             "source": "a.csv",
             "target": "b.csv",
-            "key": ["id"],
+            "keys": ["id"],
         }
     )
     assert isinstance(cfg, TabularConfig)
-    assert cfg.ignore_columns == []
-    assert cfg.tolerance == {}
-    assert cfg.normalization == {}
+    assert cfg.compare.trim_whitespace is True
+    assert cfg.compare.case_insensitive is False
+    assert cfg.filters.exclude_keys == []
+    assert cfg.csv.delimiter == ","
+    assert cfg.sampling.sample_limit == 200
 
 
 def test_tabular_full() -> None:
@@ -34,19 +36,22 @@ def test_tabular_full() -> None:
             "type": "tabular",
             "source": "a.csv",
             "target": "b.csv",
-            "key": ["id", "region"],
-            "ignore_columns": ["updated_at"],
-            "tolerance": {"amount": 0.01},
-            "string_rules": {"name": ["trim", "case_insensitive"]},
-            "normalization": {
-                "full_name": [
-                    {"op": "concat", "args": ["first_name", " ", "last_name"]},
-                    {"op": "trim"},
-                ],
+            "keys": ["id", "region"],
+            "compare": {
+                "exclude_columns": ["updated_at"],
+                "trim_whitespace": True,
+                "case_insensitive": True,
             },
+            "filters": {
+                "exclude_keys": [{"id": "1", "region": "US"}],
+            },
+            "csv": {"delimiter": "|"},
+            "sampling": {"sample_limit": 100},
         }
     )
-    assert len(cfg.normalization["full_name"]) == 2
+    assert cfg.compare.case_insensitive is True
+    assert len(cfg.filters.exclude_keys) == 1
+    assert cfg.csv.delimiter == "|"
 
 
 # ---------------------------------------------------------------------------
@@ -54,19 +59,19 @@ def test_tabular_full() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_tabular_empty_key_rejected() -> None:
+def test_tabular_empty_keys_rejected() -> None:
     with pytest.raises(ValidationError):
         adapter.validate_python(
             {
                 "type": "tabular",
                 "source": "a.csv",
                 "target": "b.csv",
-                "key": [],
+                "keys": [],
             }
         )
 
 
-def test_tabular_missing_key_rejected() -> None:
+def test_tabular_missing_keys_rejected() -> None:
     with pytest.raises(ValidationError):
         adapter.validate_python(
             {
@@ -77,45 +82,34 @@ def test_tabular_missing_key_rejected() -> None:
         )
 
 
-def test_tabular_norm_self_ref_rejected() -> None:
-    """Generated columns must not be referenced in other normalization args."""
-    with pytest.raises(ValidationError, match="references generated column"):
+def test_tabular_invalid_exclude_keys_rejected() -> None:
+    """exclude_keys entries must contain exactly all key columns."""
+    with pytest.raises(ValidationError, match="exclude_keys"):
         adapter.validate_python(
             {
                 "type": "tabular",
                 "source": "a.csv",
                 "target": "b.csv",
-                "key": ["id"],
-                "normalization": {
-                    "col_a": [{"op": "upper"}],
-                    "col_b": [{"op": "concat", "args": ["col_a", "x"]}],
+                "keys": ["id", "region"],
+                "filters": {
+                    "exclude_keys": [{"id": "1"}],  # missing "region"
                 },
             }
         )
 
 
-def test_tabular_invalid_string_rule() -> None:
-    with pytest.raises(ValidationError):
+def test_tabular_exclude_keys_extra_column_rejected() -> None:
+    """exclude_keys entries must not have extra columns beyond keys."""
+    with pytest.raises(ValidationError, match="exclude_keys"):
         adapter.validate_python(
             {
                 "type": "tabular",
                 "source": "a.csv",
                 "target": "b.csv",
-                "key": ["id"],
-                "string_rules": {"name": ["nope"]},
-            }
-        )
-
-
-def test_tabular_invalid_norm_op() -> None:
-    with pytest.raises(ValidationError):
-        adapter.validate_python(
-            {
-                "type": "tabular",
-                "source": "a.csv",
-                "target": "b.csv",
-                "key": ["id"],
-                "normalization": {"x": [{"op": "bad_op"}]},
+                "keys": ["id"],
+                "filters": {
+                    "exclude_keys": [{"id": "1", "extra": "bad"}],
+                },
             }
         )
 

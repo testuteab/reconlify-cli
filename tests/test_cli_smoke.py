@@ -22,8 +22,12 @@ def test_run_subcommand_help() -> None:
 
 
 def test_run_tabular_min(tmp_path) -> None:
+    source = tmp_path / "a.csv"
+    source.write_text("id,name\n1,Alice\n2,Bob\n")
+    target = tmp_path / "b.csv"
+    target.write_text("id,name\n1,Alice\n2,Bob\n")
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("type: tabular\nsource: a.csv\ntarget: b.csv\nkey:\n  - id\n")
+    cfg.write_text(f"type: tabular\nsource: {source}\ntarget: {target}\nkeys:\n  - id\n")
     report_path = tmp_path / "report.json"
     result = runner.invoke(app, ["run", str(cfg), "--out", str(report_path)])
     assert result.exit_code == 0
@@ -33,7 +37,7 @@ def test_run_tabular_min(tmp_path) -> None:
     assert data["type"] == "tabular"
     assert data["version"] == "1.1"
     assert "config_hash" in data
-    assert data["summary"]["total_rows_source"] == 0
+    assert data["summary"]["source_rows"] == 2
 
 
 def test_run_text_min(tmp_path) -> None:
@@ -52,8 +56,8 @@ def test_run_text_min(tmp_path) -> None:
     assert data["details"]["mode"] == "line_by_line"
 
 
-def test_run_missing_key_fails(tmp_path) -> None:
-    """Tabular config without key must fail with exit code 2."""
+def test_run_missing_keys_fails(tmp_path) -> None:
+    """Tabular config without keys must fail with exit code 2."""
     cfg = tmp_path / "bad.yaml"
     cfg.write_text("type: tabular\nsource: a.csv\ntarget: b.csv\n")
     report_path = tmp_path / "report.json"
@@ -83,7 +87,7 @@ def test_run_missing_file_fails(tmp_path) -> None:
 def test_error_report_config_validation(tmp_path) -> None:
     """Invalid YAML config should produce report.json with error.code."""
     cfg = tmp_path / "bad.yaml"
-    cfg.write_text("type: tabular\nsource: a.csv\ntarget: b.csv\n")  # missing key
+    cfg.write_text("type: tabular\nsource: a.csv\ntarget: b.csv\n")  # missing keys
     report_path = tmp_path / "report.json"
 
     result = runner.invoke(app, ["run", str(cfg), "--out", str(report_path)])
@@ -95,7 +99,7 @@ def test_error_report_config_validation(tmp_path) -> None:
     assert data["error"]["message"]  # non-empty
     assert data["error"]["details"]  # non-empty
     assert data["type"] == "tabular"
-    assert data["summary"]["total_rows_source"] == 0
+    assert data["summary"]["source_rows"] == 0
     assert data["samples"] == []
 
 

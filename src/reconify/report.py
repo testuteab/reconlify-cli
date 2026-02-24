@@ -12,6 +12,7 @@ from reconify.models import (
     ReconReport,
     TabularConfig,
     TabularDetails,
+    TabularFiltersApplied,
     TabularSummary,
     TextConfig,
     TextDetails,
@@ -37,7 +38,13 @@ def build_report(cfg: TabularConfig | TextConfig) -> ReconReport:
             generated_at=now,
             config_hash=h,
             summary=TabularSummary(),
-            details=TabularDetails(),
+            details=TabularDetails(
+                format=cfg.format,
+                keys=list(cfg.keys),
+                filters_applied=TabularFiltersApplied(
+                    exclude_keys_count=len(cfg.filters.exclude_keys),
+                ),
+            ),
         )
 
     return ReconReport(

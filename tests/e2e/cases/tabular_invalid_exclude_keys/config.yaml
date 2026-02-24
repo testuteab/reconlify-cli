@@ -1,0 +1,9 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+  - region
+filters:
+  exclude_keys:
+    - id: "1"
