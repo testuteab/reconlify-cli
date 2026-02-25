@@ -30,3 +30,10 @@ clean: ## Remove build artifacts and caches
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -exec rm -rf {} +
 	rm -rf .artifacts/*
+
+snapshot: ## Build a single-file PROJECT_SNAPSHOT into .artifacts
+	@bash scripts/make_snapshot.sh
+
+snapshot-gz: snapshot ## Build snapshot and gzip it (smaller upload)
+	@gzip -f .artifacts/PROJECT_SNAPSHOT.txt
+	@echo "Wrote: .artifacts/PROJECT_SNAPSHOT.txt.gz"
