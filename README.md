@@ -283,3 +283,11 @@ poetry run pytest              # unit + integration tests
 poetry run pytest -m e2e       # end-to-end CLI tests
 poetry run ruff check src tests
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Testute AB.

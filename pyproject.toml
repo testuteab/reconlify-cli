@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "reconify-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local-first, rule-based data reconciliation CLI tool"
 authors = []
 packages = [{ include = "reconify", from = "src" }]
