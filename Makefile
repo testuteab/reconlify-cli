@@ -1,4 +1,4 @@
-.PHONY: install lint test e2e format run clean help
+.PHONY: install lint test e2e format run build clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_.-]+:.*## .*$$' $(MAKEFILE_LIST) | \
@@ -33,3 +33,7 @@ clean: ## Remove build artifacts and caches
 
 snapshot: ## Build a single-file PROJECT_SNAPSHOT into .artifacts
 	@bash scripts/make_snapshot.sh
+
+build: ## Run poetry build and pip install
+	poetry build
+	pip install dist/*.whl
