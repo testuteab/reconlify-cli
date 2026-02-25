@@ -1,6 +1,6 @@
 type: tabular
-source: data/source.csv
-target: data/target.csv
+source: examples/data/source.csv
+target: examples/data/target.csv
 keys:
   - id
   - region

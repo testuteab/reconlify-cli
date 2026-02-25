@@ -304,6 +304,11 @@ def _do_comparison(
     source_cols = _get_column_names(con, src_compare_table)
     target_cols = _get_column_names(con, tgt_compare_table)
 
+    # Column lists for projection tables (excludes normalization virtual cols).
+    # Used for excluded-key / row-filter samples that query pre-normalization tables.
+    source_proj_cols = _get_column_names(con, "source_proj")
+    target_proj_cols = _get_column_names(con, "target_proj")
+
     common_cols = set(source_cols) & set(target_cols)
     common_cols.discard("_reconify_line_number")
     for k in keys:
@@ -457,8 +462,8 @@ def _do_comparison(
                 con,
                 config,
                 keys,
-                source_cols,
-                target_cols,
+                source_proj_cols,
+                target_proj_cols,
                 per_type_limit,
             )
 
@@ -468,8 +473,8 @@ def _do_comparison(
                 con,
                 config,
                 keys,
-                source_cols,
-                target_cols,
+                source_proj_cols,
+                target_proj_cols,
                 predicate,
                 params,
                 rf_cfg,

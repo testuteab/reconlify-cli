@@ -1,0 +1,6 @@
+id,region,status,name,amount,balance,updated_at,full_name,amount_rounded,internal_notes
+1,US,ACTIVE,Alice Smith,100.009,500.0005,2024-02-01,Alice Smith,100.01,tgt note
+2,US,ACTIVE,Bob Jones,200.00,300.000,2024-02-02,Bob Jones,200.0,tgt note
+3,EU,ACTIVE,Charlie Brown,50.99,100.500,2024-02-03,Charlie Brown,50.99,tgt note
+999,TEST,ACTIVE,test row,0,0,2024-02-05,T T,0.0,note
+4,EU,deleted,Del Row,0,0,2024-02-04,Del Row,0.0,note

@@ -1,0 +1,6 @@
+id,region,status,name,amount,balance,updated_at,first_name,last_name,internal_notes
+1,US,ACTIVE,Alice Smith,100.005,500.0001,2024-01-01,Alice,Smith,src note
+2,US,ACTIVE,Bob Jones,200.00,300.000,2024-01-02,Bob,Jones,src note
+3,EU,ACTIVE,Charlie Brown,50.99,100.500,2024-01-03,Charlie,Brown,src note
+999,TEST,ACTIVE,test row,0,0,2024-01-05,T,T,note
+4,EU,deleted,Del Row,0,0,2024-01-04,Del,Row,note

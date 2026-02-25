@@ -32,7 +32,7 @@ source: source.txt
 target: target.txt
 ```
 
-TSV files are supported via the `csv.delimiter` option:
+TSV files are supported via the configurable delimiter:
 
 ```yaml
 type: tabular
@@ -42,6 +42,8 @@ keys:
   - id
 csv:
   delimiter: "\t"
+  header: true
+  encoding: "utf-8"
 ```
 
 ## Development
