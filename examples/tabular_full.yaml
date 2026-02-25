@@ -1,18 +1,41 @@
 type: tabular
 source: data/source.csv
 target: data/target.csv
-key:
+keys:
   - id
   - region
+
+compare:
+  include_columns: null
+  exclude_columns:
+    - internal_notes
+  trim_whitespace: true
+  case_insensitive: false
+  normalize_nulls: ["", "NULL", "null"]
+
+filters:
+  exclude_keys:
+    - { id: "999", region: "TEST" }
+  row_filters:
+    apply_to: both
+    mode: exclude
+    rules:
+      - column: status
+        op: equals
+        value: deleted
+
 ignore_columns:
   - updated_at
+
 tolerance:
   amount: 0.01
   balance: 0.001
+
 string_rules:
   name:
     - trim
     - case_insensitive
+
 normalization:
   full_name:
     - op: concat
@@ -20,4 +43,16 @@ normalization:
     - op: trim
   amount_rounded:
     - op: round
-      args: [2]
+      args: [amount, 2]
+
+csv:
+  delimiter: ","
+  header: true
+  encoding: utf-8
+
+sampling:
+  sample_limit: 200
+
+output:
+  include_row_samples: true
+  include_column_stats: true

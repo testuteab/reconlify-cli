@@ -14,10 +14,34 @@ poetry install
 poetry run reconify run config.yaml
 ```
 
-The config file is a YAML document. Minimal example:
+The config file is a YAML document. Minimal tabular example:
 
 ```yaml
-type: row_match
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+```
+
+Minimal text example:
+
+```yaml
+type: text
+source: source.txt
+target: target.txt
+```
+
+TSV files are supported via the `csv.delimiter` option:
+
+```yaml
+type: tabular
+source: source.tsv
+target: target.tsv
+keys:
+  - id
+csv:
+  delimiter: "\t"
 ```
 
 ## Development

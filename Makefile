@@ -33,7 +33,3 @@ clean: ## Remove build artifacts and caches
 
 snapshot: ## Build a single-file PROJECT_SNAPSHOT into .artifacts
 	@bash scripts/make_snapshot.sh
-
-snapshot-gz: snapshot ## Build snapshot and gzip it (smaller upload)
-	@gzip -f .artifacts/PROJECT_SNAPSHOT.txt
-	@echo "Wrote: .artifacts/PROJECT_SNAPSHOT.txt.gz"

@@ -112,7 +112,7 @@ Constraints:
 ## csv (optional)
 
 csv:
-  delimiter: string          # default ","
+  delimiter: string          # default ","; use "\t" for TSV files
   header: bool               # default true
   encoding: string           # default "utf-8" (only UTF-8 supported)
 

@@ -405,6 +405,58 @@ def test_column_stats():
     assert result["details"]["column_stats"]["name"]["mismatched_count"] == 1
 
 
+def test_column_stats_disabled():
+    """column_stats is present as {} when include_column_stats is false."""
+    src = _write_csv("id,name\n1,Alice\n2,Bob\n")
+    tgt = _write_csv("id,name\n1,Alice\n2,Bobby\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        output={"include_column_stats": False},
+    )
+    result, _exit_code = compare_tabular(cfg)
+    assert "column_stats" in result["details"]
+    assert result["details"]["column_stats"] == {}
+
+
+def test_column_stats_in_error_result():
+    """column_stats is present as {} in error result details."""
+    cfg = TabularConfig(type="tabular", source="/nonexistent.csv", target="/also.csv", keys=["id"])
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 2
+    assert "column_stats" in result["details"]
+    assert result["details"]["column_stats"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Projection optimization
+# ---------------------------------------------------------------------------
+
+
+def test_projection_drops_extra_columns():
+    """Wide CSV with extra source-only columns produces identical comparison results."""
+    src = _write_csv(
+        "id,name,value,extra_a,extra_b,extra_c\n"
+        "1,Alice,100,x,y,z\n"
+        "2,Bob,200,x,y,z\n"
+        "3,Charlie,300,x,y,z\n"
+    )
+    tgt = _write_csv("id,name,value\n1,Alice,100\n2,Bob,999\n")
+    cfg = TabularConfig(type="tabular", source=src, target=tgt, keys=["id"])
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    # compared_columns should only contain common non-key columns
+    assert sorted(result["details"]["compared_columns"]) == ["name", "value"]
+    assert result["summary"]["missing_in_target"] == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+    # Source-only columns (extra_a/b/c) should NOT appear in missing sample rows
+    missing = result["samples"]["missing_in_target"]
+    assert len(missing) == 1
+    assert "extra_a" not in missing[0].get("row", {})
+
+
 # ---------------------------------------------------------------------------
 # Row filters - exclude mode
 # ---------------------------------------------------------------------------

@@ -115,25 +115,70 @@ def _do_comparison(
     target_total = con.execute("SELECT count(*) FROM target_raw").fetchone()[0]
 
     # ---------------------------------------------------------------
+    # 1b) PROJECTION - keep only columns needed downstream
+    # ---------------------------------------------------------------
+    keys = config.keys
+    src_raw_cols = set(_get_column_names(con, "source_raw"))
+    tgt_raw_cols = set(_get_column_names(con, "target_raw"))
+
+    # Columns common to both sides (potential comparison + sample columns)
+    common_cols = (src_raw_cols & tgt_raw_cols) - {"_reconify_line_number"}
+
+    key_set = set(keys)
+
+    # Normalization: input columns (source-side) + output columns (target-side)
+    norm_input_cols: set[str] = set()
+    norm_output_cols = set(config.normalization.keys())
+    for _col_name, pipeline in config.normalization.items():
+        for step in pipeline:
+            for arg in step.args:
+                if isinstance(arg, str) and arg in src_raw_cols:
+                    norm_input_cols.add(arg)
+
+    # Row filter referenced columns
+    rf_cols: set[str] = set()
+    if config.filters.row_filters and config.filters.row_filters.rules:
+        for rule in config.filters.row_filters.rules:
+            rf_cols.add(rule.column)
+
+    src_needed = (
+        {"_reconify_line_number"}
+        | key_set
+        | common_cols
+        | norm_input_cols
+        | (rf_cols & src_raw_cols)
+    )
+    tgt_needed = (
+        {"_reconify_line_number"}
+        | key_set
+        | common_cols
+        | (norm_output_cols & tgt_raw_cols)
+        | (rf_cols & tgt_raw_cols)
+    )
+
+    for side, needed in (("source", src_needed), ("target", tgt_needed)):
+        proj_cols = ", ".join(f'"{c}"' for c in sorted(needed))
+        con.execute(f"CREATE TABLE {side}_proj AS SELECT {proj_cols} FROM {side}_raw")
+
+    # ---------------------------------------------------------------
     # 2) APPLY exclude_keys FILTER
     # ---------------------------------------------------------------
     source_excluded_rows = 0
     target_excluded_rows = 0
-    keys = config.keys
 
     if config.filters.exclude_keys:
         _create_excluded_keys_table(con, config)
 
         for side in ("source", "target"):
-            anti_join_cond = " AND ".join(f'{side}_raw."{k}" = _excluded_keys."{k}"' for k in keys)
+            anti_join_cond = " AND ".join(f'{side}_proj."{k}" = _excluded_keys."{k}"' for k in keys)
             con.execute(
                 f"""
                 CREATE TABLE {side}_after_ek AS
                 SELECT s.*
-                FROM {side}_raw s
+                FROM {side}_proj s
                 WHERE NOT EXISTS (
                     SELECT 1 FROM _excluded_keys
-                    WHERE {anti_join_cond.replace(f"{side}_raw", "s")}
+                    WHERE {anti_join_cond.replace(f"{side}_proj", "s")}
                 )
                 """
             )
@@ -145,8 +190,8 @@ def _do_comparison(
             target_total - con.execute("SELECT count(*) FROM target_after_ek").fetchone()[0]
         )
     else:
-        con.execute("CREATE TABLE source_after_ek AS SELECT * FROM source_raw")
-        con.execute("CREATE TABLE target_after_ek AS SELECT * FROM target_raw")
+        con.execute("CREATE TABLE source_after_ek AS SELECT * FROM source_proj")
+        con.execute("CREATE TABLE target_after_ek AS SELECT * FROM target_proj")
 
     # ---------------------------------------------------------------
     # 2b) APPLY row_filters
@@ -801,7 +846,7 @@ def _fetch_excluded_key_samples(
     SELECT s._reconify_line_number AS line_number,
            {s_key_select}
            {"," + s_data_cols if s_data_cols else ""}
-    FROM source_raw s
+    FROM source_proj s
     INNER JOIN _excluded_keys ON {join_cond_s}
     ORDER BY {s_order}
     LIMIT {per_side}
@@ -834,7 +879,7 @@ def _fetch_excluded_key_samples(
     SELECT t._reconify_line_number AS line_number,
            {t_key_select}
            {"," + t_data_cols if t_data_cols else ""}
-    FROM target_raw t
+    FROM target_proj t
     INNER JOIN _excluded_keys ON {join_cond_t}
     ORDER BY {t_order}
     LIMIT {per_side}
