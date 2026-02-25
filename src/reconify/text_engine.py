@@ -12,6 +12,7 @@ from typing import Any
 from reconify.models import TextConfig, TextMode
 
 _SENTINEL = object()
+_WS_RE = re.compile(r"\s+")
 
 
 def _compile_rules(
@@ -42,7 +43,7 @@ def _apply_pipeline(
 
     # 3) collapse_whitespace
     if norm.collapse_whitespace:
-        line = re.sub(r"\s+", " ", line).strip()
+        line = _WS_RE.sub(" ", line).strip()
 
     # 4) case_insensitive
     if norm.case_insensitive:

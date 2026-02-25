@@ -6,19 +6,15 @@ import traceback
 from pathlib import Path
 
 import typer
-import yaml
-from pydantic import TypeAdapter, ValidationError
 
+from reconify.config_loader import ConfigLoadError, load_config_with_raw
 from reconify.models import (
-    ReconConfig,
     ReconError,
     TabularConfig,
     TextConfig,
     UnorderedStats,
 )
 from reconify.report import build_error_report, build_report, config_hash, write_report
-
-_adapter = TypeAdapter(ReconConfig)
 
 app = typer.Typer(help="Reconify - rule-based data reconciliation.", invoke_without_command=True)
 
@@ -60,49 +56,22 @@ def run(
     """Load a reconciliation config, validate it, and generate a report."""
     out_path = str(out) if out else "report.json"
 
-    # --- Phase 1: read config file ---
+    # --- Phase 1+2: read, parse, and validate config ---
     try:
-        raw_yaml = config_path.read_text()
-    except FileNotFoundError:
+        cfg, raw_yaml, config_type = load_config_with_raw(config_path)
+    except ConfigLoadError as exc:
         report = build_error_report(
-            config_type=None,
-            error_code="CONFIG_VALIDATION_ERROR",
-            error_message=f"Config file not found: {config_path}",
-            error_details=f"FileNotFoundError: {config_path}",
+            config_type=exc.config_type,
+            error_code=exc.code,
+            error_message=exc.message,
+            error_details=exc.details,
+            raw_config=exc.raw_yaml,
         )
         write_report(report, out_path)
-        typer.echo(f"Error report written to {out_path}", err=True)
-        raise SystemExit(2) from None
-    except Exception as exc:
-        report = build_error_report(
-            config_type=None,
-            error_code="RUNTIME_ERROR",
-            error_message=f"Failed to read config file: {exc}",
-            error_details=traceback.format_exc(),
-        )
-        write_report(report, out_path)
-        typer.echo(f"Error report written to {out_path}", err=True)
-        raise SystemExit(2) from None
-
-    # --- Phase 2: parse and validate config ---
-    raw_dict = yaml.safe_load(raw_yaml)
-    config_type = raw_dict.get("type") if isinstance(raw_dict, dict) else None
-
-    try:
-        if not isinstance(raw_dict, dict):
-            msg = "Config file must contain a YAML mapping"
-            raise ValueError(msg)
-        cfg = _adapter.validate_python(raw_dict)
-    except (ValidationError, ValueError) as exc:
-        report = build_error_report(
-            config_type=config_type,
-            error_code="CONFIG_VALIDATION_ERROR",
-            error_message="Config validation failed",
-            error_details=str(exc),
-            raw_config=raw_yaml,
-        )
-        write_report(report, out_path)
-        typer.echo(f"Config validation failed. Error report written to {out_path}", err=True)
+        if exc.code == "RUNTIME_ERROR":
+            typer.echo(f"Error report written to {out_path}", err=True)
+        else:
+            typer.echo(f"Config validation failed. Error report written to {out_path}", err=True)
         raise SystemExit(2) from None
 
     # --- Phase 3: run comparison ---
@@ -202,13 +171,11 @@ def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
         read_rows_source=result["details"]["read_rows_source"],
         read_rows_target=result["details"]["read_rows_target"],
         filters_applied=TabularFiltersApplied(**result["details"]["filters_applied"]),
+        column_stats=result["details"]["column_stats"],
     )
 
     # For tabular, samples is a dict of lists
     report.samples = result["samples"]
-
-    if result.get("column_stats"):
-        report.details.column_stats = result["column_stats"]
 
     if result.get("error"):
         report.error = ReconError(**result["error"])

@@ -1,0 +1,6 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+  - region

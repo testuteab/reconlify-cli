@@ -1,3 +1,9 @@
+# Architecture Snapshot — Report Schema
+
+Source: `docs/REPORT_SCHEMA_v1.md`
+
+---
+
 # Reconify Report Schema – V1
 
 Output file: `report.json`
@@ -848,26 +854,7 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 4):**
-
-- **NULL-safe key matching:** Tabular engine now uses `IS NOT DISTINCT FROM`
-  for key joins, correctly matching rows where key columns contain NULL values.
-  Missing-row detection now checks `_reconify_line_number IS NULL` on the
-  outer-joined side — a stable indicator that is always non-null for real rows —
-  instead of checking key columns which are ambiguous when keys can be NULL.
-- **`column_stats` always in `details`:** `details.column_stats` is now always
-  present in tabular reports (including error reports). When
-  `output.include_column_stats` is false or there are no compared columns, it
-  is an empty dict `{}`. Previously it was placed at the report root and only
-  present when enabled.
-- **Encoding validation:** The tabular engine now validates that
-  `csv.encoding` is `"utf-8"` (the only encoding DuckDB supports) and returns
-  a clear `RUNTIME_ERROR` for unsupported encodings.
-- **Resource cleanup:** DuckDB connection is now closed via `try/finally` on
-  all return paths, including early-return error cases (INVALID_ROW_FILTERS,
-  DUPLICATE_KEYS).
-
-**Previous revision (v1.1 doc update, revision 3):**
+**This revision (v1.1 doc update, revision 3):**
 
 - Clarified `ignored_blank_lines_*` semantics: defined exactly when a line is
   considered "blank" (empty string `""` at step 6 of the 7-step pipeline,

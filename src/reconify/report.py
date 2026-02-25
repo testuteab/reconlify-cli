@@ -62,10 +62,7 @@ def build_report(cfg: TabularConfig | TextConfig) -> ReconReport:
         summary=TextSummary(),
         details=TextDetails(
             mode=cfg.mode.value,
-            rules_applied=TextRulesApplied(
-                drop_lines_count=len(cfg.drop_lines_regex),
-                replace_rules_count=len(cfg.replace_regex),
-            ),
+            rules_applied=TextRulesApplied(),
         ),
     )
 

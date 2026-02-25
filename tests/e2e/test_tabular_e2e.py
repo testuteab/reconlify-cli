@@ -525,3 +525,46 @@ class TestTabularCsvHeaderFalse:
         assert report["details"]["compared_columns"] == ["column1"]
         _assert_no_row_filters(report["details"]["filters_applied"])
         _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: NULL-safe key matching
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularNullKeysMatching:
+    def test_null_keys_matching_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_null_keys_matching_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 3
+        assert report["summary"]["target_rows"] == 3
+        assert report["summary"]["missing_in_target"] == 0
+        assert report["summary"]["missing_in_source"] == 0
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["details"]["keys"] == ["id", "region"]
+        # NULL region key should be matched via IS NOT DISTINCT FROM
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: column_stats disabled → always empty {}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularColumnStatsDisabled:
+    def test_column_stats_disabled_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_column_stats_disabled_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 2
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["rows_with_mismatches"] == 0
+        # column_stats must always be present in details, empty when disabled
+        assert "column_stats" in report["details"]
+        assert report["details"]["column_stats"] == {}
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)

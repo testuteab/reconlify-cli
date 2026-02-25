@@ -53,6 +53,7 @@ def _error_result(
             "read_rows_source": 0,
             "read_rows_target": 0,
             "filters_applied": _empty_filters_applied(config),
+            "column_stats": {},
         },
         "samples": {
             "missing_in_target": [],
@@ -69,8 +70,26 @@ def _error_result(
 
 
 def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any], int]:
-    con = duckdb.connect(":memory:")
+    enc = config.csv.encoding.lower().replace("-", "").replace("_", "")
+    if enc != "utf8":
+        elapsed = time.monotonic() - start
+        return _error_result(
+            config,
+            elapsed,
+            "RUNTIME_ERROR",
+            f"Unsupported encoding: {config.csv.encoding!r}. Only UTF-8 is supported.",
+        )
 
+    con = duckdb.connect(":memory:")
+    try:
+        return _do_comparison(config, start, con)
+    finally:
+        con.close()
+
+
+def _do_comparison(
+    config: TabularConfig, start: float, con: duckdb.DuckDBPyConnection
+) -> tuple[dict[str, Any], int]:
     # ---------------------------------------------------------------
     # 1) READ CSV WITH LINE NUMBERS
     # ---------------------------------------------------------------
@@ -245,9 +264,9 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
     # ---------------------------------------------------------------
     # 6) COMPUTE DIFFERENCES
     # ---------------------------------------------------------------
-    key_join_cond = " AND ".join(f's."{k}" = t."{k}"' for k in keys)
-    key_is_null_t = " AND ".join(f't."{k}" IS NULL' for k in keys)
-    key_is_null_s = " AND ".join(f's."{k}" IS NULL' for k in keys)
+    key_join_cond = " AND ".join(f's."{k}" IS NOT DISTINCT FROM t."{k}"' for k in keys)
+    key_is_null_t = "t._reconify_line_number IS NULL"
+    key_is_null_s = "s._reconify_line_number IS NULL"
 
     # A) missing_in_target
     missing_in_target_count = con.execute(
@@ -430,9 +449,9 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
         },
     }
 
-    # Optional column stats
+    # Column stats: always present in details, empty {} when disabled
     if config.output.include_column_stats and compared_columns:
-        report["column_stats"] = _compute_column_stats(
+        report["details"]["column_stats"] = _compute_column_stats(
             con,
             keys,
             compared_columns,
@@ -440,8 +459,9 @@ def _run_comparison(config: TabularConfig, start: float) -> tuple[dict[str, Any]
             norm_exprs_target,
             key_join_cond,
         )
+    else:
+        report["details"]["column_stats"] = {}
 
-    con.close()
     return report, exit_code
 
 

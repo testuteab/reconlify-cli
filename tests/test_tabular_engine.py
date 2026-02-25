@@ -400,9 +400,9 @@ def test_column_stats():
         output={"include_column_stats": True},
     )
     result, _exit_code = compare_tabular(cfg)
-    assert "column_stats" in result
-    assert result["column_stats"]["value"]["mismatched_count"] == 1
-    assert result["column_stats"]["name"]["mismatched_count"] == 1
+    assert "column_stats" in result["details"]
+    assert result["details"]["column_stats"]["value"]["mismatched_count"] == 1
+    assert result["details"]["column_stats"]["name"]["mismatched_count"] == 1
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,38 @@ def test_text_report_structure() -> None:
     assert data["details"]["rules_applied"]["drop_lines_count"] == 0
 
 
+def test_text_rules_applied_starts_at_zero() -> None:
+    """build_report must not seed rules_applied with config counts (they are runtime counts)."""
+    cfg = TextConfig(
+        type="text",
+        source="a.txt",
+        target="b.txt",
+        drop_lines_regex=["^#", "^//"],
+        replace_regex=[{"pattern": "foo", "replace": "bar"}],
+    )
+    report = build_report(cfg)
+    assert report.details.rules_applied.drop_lines_count == 0
+    assert report.details.rules_applied.replace_rules_count == 0
+
+
+def test_build_report_text_rules_applied_starts_at_zero() -> None:
+    from reconify.models import TextNormalize
+
+    cfg = TextConfig(
+        type="text",
+        source="a.txt",
+        target="b.txt",
+        drop_lines_regex=["foo"],
+        replace_regex=[{"pattern": "bar", "replace": "baz"}],
+        normalize=TextNormalize(),
+    )
+
+    report = build_report(cfg)
+
+    assert report.details.rules_applied.drop_lines_count == 0
+    assert report.details.rules_applied.replace_rules_count == 0
+
+
 def test_config_hash_deterministic() -> None:
     cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
     assert config_hash(cfg) == config_hash(cfg)

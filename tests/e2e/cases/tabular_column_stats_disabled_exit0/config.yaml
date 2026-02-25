@@ -1,0 +1,7 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - id
+output:
+  include_column_stats: false
