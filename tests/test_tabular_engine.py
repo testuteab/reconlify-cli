@@ -870,3 +870,403 @@ def test_row_filter_builder_uses_param_binding():
     # The value should NOT appear in the SQL string
     assert "O'Brien" not in pred
     assert "O'Brien" in params[0]  # lowered or not based on case_insensitive
+
+
+# ---------------------------------------------------------------------------
+# ignore_columns
+# ---------------------------------------------------------------------------
+
+
+def test_ignore_columns():
+    """ignore_columns should exclude columns from comparison."""
+    src = _write_csv("id,name,value,notes\n1,Alice,100,src note\n")
+    tgt = _write_csv("id,name,value,notes\n1,Alice,100,tgt note\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        ignore_columns=["notes"],
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert "notes" not in result["details"]["compared_columns"]
+    assert "name" in result["details"]["compared_columns"]
+    assert "value" in result["details"]["compared_columns"]
+
+
+def test_ignore_columns_without_match():
+    """ignore_columns with non-existent column should not error."""
+    src = _write_csv("id,name\n1,Alice\n")
+    tgt = _write_csv("id,name\n1,Alice\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        ignore_columns=["nonexistent"],
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert "name" in result["details"]["compared_columns"]
+
+
+# ---------------------------------------------------------------------------
+# Tolerance
+# ---------------------------------------------------------------------------
+
+
+def test_tolerance_within_range():
+    """Values within tolerance should not cause mismatches."""
+    src = _write_csv("id,amount\n1,100.001\n2,200.005\n")
+    tgt = _write_csv("id,amount\n1,100.009\n2,200.000\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        tolerance={"amount": 0.01},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+
+
+def test_tolerance_exceeds_range():
+    """Values outside tolerance should cause mismatches."""
+    src = _write_csv("id,amount\n1,100.0\n2,200.0\n")
+    tgt = _write_csv("id,amount\n1,100.5\n2,200.0\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        tolerance={"amount": 0.1},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+def test_tolerance_non_numeric_fallback():
+    """Non-numeric values fall back to string comparison under tolerance."""
+    src = _write_csv("id,amount\n1,abc\n")
+    tgt = _write_csv("id,amount\n1,abc\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        tolerance={"amount": 0.01},
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_tolerance_non_numeric_mismatch():
+    """Non-numeric different values should mismatch even with tolerance."""
+    src = _write_csv("id,amount\n1,abc\n")
+    tgt = _write_csv("id,amount\n1,xyz\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        tolerance={"amount": 0.01},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+def test_tolerance_negative_value_rejected():
+    """Negative tolerance values should be rejected by the model validator."""
+    with pytest.raises(ValueError, match="tolerance"):
+        TabularConfig(
+            type="tabular",
+            source="a.csv",
+            target="b.csv",
+            keys=["id"],
+            tolerance={"col": -0.1},
+        )
+
+
+# ---------------------------------------------------------------------------
+# String rules
+# ---------------------------------------------------------------------------
+
+
+def test_string_rules_trim():
+    """Per-column trim rule trims values before comparison."""
+    src = _write_csv("id,name\n1, Alice \n")
+    tgt = _write_csv("id,name\n1,Alice\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        compare={"trim_whitespace": False},
+        string_rules={"name": ["trim"]},
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_string_rules_case_insensitive():
+    """Per-column case_insensitive rule lowercases values before comparison."""
+    src = _write_csv("id,name\n1,ALICE\n")
+    tgt = _write_csv("id,name\n1,alice\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        compare={"case_insensitive": False},
+        string_rules={"name": ["case_insensitive"]},
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_string_rules_contains():
+    """Per-column contains rule checks bidirectional substring containment."""
+    src = _write_csv("id,desc\n1,Hello World\n2,Python\n")
+    tgt = _write_csv("id,desc\n1,World\n2,Python programming\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        string_rules={"desc": ["contains"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+
+
+def test_string_rules_contains_no_match():
+    """Contains rule should detect non-containment as mismatch."""
+    src = _write_csv("id,desc\n1,Hello\n")
+    tgt = _write_csv("id,desc\n1,World\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        string_rules={"desc": ["contains"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+def test_string_rules_regex_extract():
+    """regex_extract rule extracts groups before comparison."""
+    src = _write_csv("id,code\n1,ABC-123\n2,DEF-456\n")
+    tgt = _write_csv("id,code\n1,XYZ-123\n2,QRS-456\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        string_rules={
+            "code": [{"regex_extract": {"pattern": "(\\d+)", "group": 1}}],
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+
+
+def test_string_rules_regex_extract_mismatch():
+    """regex_extract should detect different extracted values."""
+    src = _write_csv("id,code\n1,ABC-123\n")
+    tgt = _write_csv("id,code\n1,XYZ-999\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        string_rules={
+            "code": [{"regex_extract": {"pattern": "(\\d+)", "group": 1}}],
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Normalization virtual columns
+# ---------------------------------------------------------------------------
+
+
+def test_normalization_concat():
+    """Normalization concat creates a virtual column matching target."""
+    src = _write_csv("id,first,last,email\n1,Alice,Smith,a@t.com\n")
+    tgt = _write_csv("id,full_name,email\n1,Alice Smith,a@t.com\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        normalization={
+            "full_name": [{"op": "concat", "args": ["first", " ", "last"]}],
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert "full_name" in result["details"]["compared_columns"]
+    assert "email" in result["details"]["compared_columns"]
+
+
+def test_normalization_concat_mismatch():
+    """Normalization virtual column mismatch should be detected."""
+    src = _write_csv("id,first,last\n1,Alice,Smith\n")
+    tgt = _write_csv("id,full_name\n1,Bob Jones\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        normalization={
+            "full_name": [{"op": "concat", "args": ["first", " ", "last"]}],
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+def test_normalization_upper():
+    """Normalization upper should uppercase the column."""
+    src = _write_csv("id,name\n1,alice\n")
+    tgt = _write_csv("id,name_upper\n1,ALICE\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        normalization={
+            "name_upper": [{"op": "upper", "args": ["name"]}],
+        },
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_normalization_add():
+    """Normalization add should sum two numeric columns."""
+    src = _write_csv("id,a,b\n1,10,20\n")
+    tgt = _write_csv("id,total\n1,30.0\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        normalization={
+            "total": [{"op": "add", "args": ["a", "b"]}],
+        },
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_normalization_pipeline():
+    """Multi-step normalization pipeline should chain operations."""
+    src = _write_csv("id,first,last\n1,alice,smith\n")
+    tgt = _write_csv("id,full_name\n1,ALICE SMITH\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        normalization={
+            "full_name": [
+                {"op": "concat", "args": ["first", " ", "last"]},
+                {"op": "upper"},
+            ],
+        },
+    )
+    _result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+
+
+def test_normalization_cross_ref_rejected():
+    """Normalization columns cannot reference other generated columns."""
+    with pytest.raises(ValueError, match="generated column"):
+        TabularConfig(
+            type="tabular",
+            source="a.csv",
+            target="b.csv",
+            keys=["id"],
+            normalization={
+                "a": [{"op": "upper", "args": ["name"]}],
+                "b": [{"op": "upper", "args": ["a"]}],
+            },
+        )
+
+
+def test_normalization_empty_pipeline_rejected():
+    """Empty normalization pipeline should be rejected."""
+    with pytest.raises(ValueError, match="pipeline must not be empty"):
+        TabularConfig(
+            type="tabular",
+            source="a.csv",
+            target="b.csv",
+            keys=["id"],
+            normalization={"col": []},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Normalization pipeline SQL builder
+# ---------------------------------------------------------------------------
+
+
+def test_norm_step_map():
+    from reconify.models import NormStep
+    from reconify.tabular_engine import _build_norm_step_sql
+
+    step = NormStep(op="map", args=["status", "A", "Active", "I", "Inactive"])
+    sql = _build_norm_step_sql(step, None, {"status"})
+    assert "CASE" in sql
+    assert "WHEN" in sql
+    assert "Active" in sql
+
+
+def test_norm_step_substr():
+    from reconify.models import NormStep
+    from reconify.tabular_engine import _build_norm_step_sql
+
+    step = NormStep(op="substr", args=["name", 1, 3])
+    sql = _build_norm_step_sql(step, None, {"name"})
+    assert "SUBSTR" in sql
+
+
+def test_norm_step_round():
+    from reconify.models import NormStep
+    from reconify.tabular_engine import _build_norm_step_sql
+
+    step = NormStep(op="round", args=["amount", 2])
+    sql = _build_norm_step_sql(step, None, {"amount"})
+    assert "ROUND" in sql
+    assert "TRY_CAST" in sql
+
+
+def test_norm_step_coalesce():
+    from reconify.models import NormStep
+    from reconify.tabular_engine import _build_norm_step_sql
+
+    step = NormStep(op="coalesce", args=["a", "b", "default"])
+    sql = _build_norm_step_sql(step, None, {"a", "b"})
+    assert "COALESCE" in sql
+
+
+def test_norm_step_with_prev_expr():
+    from reconify.models import NormStep
+    from reconify.tabular_engine import _build_norm_step_sql
+
+    step = NormStep(op="upper", args=[])
+    sql = _build_norm_step_sql(step, '"name"', {"name"})
+    assert sql == 'UPPER("name")'

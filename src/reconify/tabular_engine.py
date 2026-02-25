@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
 import duckdb
 
-from reconify.models import RowFilterOp, RowFilterRule, TabularConfig
+from reconify.models import NormOp, NormStep, RowFilterOp, RowFilterRule, TabularConfig
 
 
 def compare_tabular(config: TabularConfig) -> tuple[dict[str, Any], int]:
@@ -232,10 +233,31 @@ def _do_comparison(
             )
 
     # ---------------------------------------------------------------
+    # 3.5) NORMALIZATION VIRTUAL COLUMNS (source-side only)
+    # ---------------------------------------------------------------
+    src_compare_table = "source_filtered"
+    tgt_compare_table = "target_filtered"
+
+    if config.normalization:
+        src_cols_for_norm = set(_get_column_names(con, "source_filtered"))
+        src_cols_for_norm.discard("_reconify_line_number")
+
+        norm_col_exprs = []
+        for col_name, pipeline in config.normalization.items():
+            expr = _build_normalization_pipeline(pipeline, src_cols_for_norm)
+            norm_col_exprs.append(f'({expr}) AS "{col_name}"')
+
+        extra = ", " + ", ".join(norm_col_exprs)
+        con.execute(
+            f"CREATE TABLE source_normed AS SELECT source_filtered.*{extra} FROM source_filtered"
+        )
+        src_compare_table = "source_normed"
+
+    # ---------------------------------------------------------------
     # 4) DETERMINE COMPARED COLUMNS
     # ---------------------------------------------------------------
-    source_cols = _get_column_names(con, "source_filtered")
-    target_cols = _get_column_names(con, "target_filtered")
+    source_cols = _get_column_names(con, src_compare_table)
+    target_cols = _get_column_names(con, tgt_compare_table)
 
     common_cols = set(source_cols) & set(target_cols)
     common_cols.discard("_reconify_line_number")
@@ -252,14 +274,22 @@ def _do_comparison(
         exclude_set = set(config.compare.exclude_columns)
         compared_columns = [c for c in compared_columns if c not in exclude_set]
 
+    if config.ignore_columns:
+        ignore_set = set(config.ignore_columns)
+        compared_columns = [c for c in compared_columns if c not in ignore_set]
+
     # ---------------------------------------------------------------
-    # 5) NORMALIZATION LOGIC (build SQL expressions)
+    # 5) BUILD PER-COLUMN NORMALIZATION + EQUALITY PREDICATES
     # ---------------------------------------------------------------
     norm_exprs_source = {}
     norm_exprs_target = {}
+    eq_predicates = {}
     for col in compared_columns:
-        norm_exprs_source[col] = _build_norm_expr(f's."{col}"', config)
-        norm_exprs_target[col] = _build_norm_expr(f't."{col}"', config)
+        norm_exprs_source[col] = _build_col_norm_expr(f's."{col}"', col, config)
+        norm_exprs_target[col] = _build_col_norm_expr(f't."{col}"', col, config)
+        eq_predicates[col] = _build_eq_predicate(
+            norm_exprs_source[col], norm_exprs_target[col], col, config
+        )
 
     # ---------------------------------------------------------------
     # 6) COMPUTE DIFFERENCES
@@ -272,8 +302,8 @@ def _do_comparison(
     missing_in_target_count = con.execute(
         f"""
         SELECT count(*)
-        FROM source_filtered s
-        LEFT JOIN target_filtered t ON {key_join_cond}
+        FROM {src_compare_table} s
+        LEFT JOIN {tgt_compare_table} t ON {key_join_cond}
         WHERE {key_is_null_t}
         """
     ).fetchone()[0]
@@ -282,25 +312,22 @@ def _do_comparison(
     missing_in_source_count = con.execute(
         f"""
         SELECT count(*)
-        FROM target_filtered t
-        LEFT JOIN source_filtered s ON {key_join_cond}
+        FROM {tgt_compare_table} t
+        LEFT JOIN {src_compare_table} s ON {key_join_cond}
         WHERE {key_is_null_s}
         """
     ).fetchone()[0]
 
     # C) value_mismatches
     if compared_columns:
-        mismatch_conditions = " OR ".join(
-            f"({norm_exprs_source[c]} IS DISTINCT FROM {norm_exprs_target[c]})"
-            for c in compared_columns
-        )
+        mismatch_conditions = " OR ".join(f"NOT ({eq_predicates[c]})" for c in compared_columns)
 
-        cell_expr = _cell_count_expr(compared_columns, norm_exprs_source, norm_exprs_target)
+        cell_expr = _cell_count_expr(compared_columns, eq_predicates)
         mismatch_query = f"""
         SELECT count(*) as row_count,
                COALESCE({cell_expr}, 0) as cell_count
-        FROM source_filtered s
-        INNER JOIN target_filtered t ON {key_join_cond}
+        FROM {src_compare_table} s
+        INNER JOIN {tgt_compare_table} t ON {key_join_cond}
         WHERE {mismatch_conditions}
         """
         mismatch_result = con.execute(mismatch_query).fetchone()
@@ -333,8 +360,8 @@ def _do_comparison(
             SELECT s._reconify_line_number as line_number,
                    {", ".join(f's."{k}"' for k in keys)}
                    {"," + s_all_cols if s_all_cols else ""}
-            FROM source_filtered s
-            LEFT JOIN target_filtered t ON {key_join_cond}
+            FROM {src_compare_table} s
+            LEFT JOIN {tgt_compare_table} t ON {key_join_cond}
             WHERE {key_is_null_t}
             ORDER BY {key_order}
             LIMIT {per_type_limit}
@@ -352,8 +379,8 @@ def _do_comparison(
             SELECT t._reconify_line_number as line_number,
                    {", ".join(f't."{k}"' for k in keys)}
                    {"," + t_all_cols if t_all_cols else ""}
-            FROM target_filtered t
-            LEFT JOIN source_filtered s ON {key_join_cond}
+            FROM {tgt_compare_table} t
+            LEFT JOIN {src_compare_table} s ON {key_join_cond}
             WHERE {key_is_null_s}
             ORDER BY {key_order_t}
             LIMIT {per_type_limit}
@@ -372,8 +399,11 @@ def _do_comparison(
                 compared_columns,
                 norm_exprs_source,
                 norm_exprs_target,
+                eq_predicates,
                 key_join_cond,
                 per_type_limit,
+                src_compare_table,
+                tgt_compare_table,
             )
 
         # Excluded samples (exclude_keys)
@@ -453,11 +483,11 @@ def _do_comparison(
     if config.output.include_column_stats and compared_columns:
         report["details"]["column_stats"] = _compute_column_stats(
             con,
-            keys,
             compared_columns,
-            norm_exprs_source,
-            norm_exprs_target,
+            eq_predicates,
             key_join_cond,
+            src_compare_table,
+            tgt_compare_table,
         )
     else:
         report["details"]["column_stats"] = {}
@@ -489,12 +519,12 @@ def _get_column_names(con: duckdb.DuckDBPyConnection, table: str) -> list[str]:
 
 
 def _build_norm_expr(col_expr: str, config: TabularConfig) -> str:
-    """Build a normalized SQL expression for a column."""
+    """Build a normalized SQL expression for a column (global rules only)."""
     expr = col_expr
 
     # Apply normalize_nulls: NULLIF for each value
     for null_val in config.compare.normalize_nulls:
-        expr = f"NULLIF({expr}, '{null_val}')"
+        expr = f"NULLIF({expr}, '{_escape_sql_str(null_val)}')"
 
     # Apply trim_whitespace
     if config.compare.trim_whitespace:
@@ -507,17 +537,139 @@ def _build_norm_expr(col_expr: str, config: TabularConfig) -> str:
     return expr
 
 
+def _build_col_norm_expr(col_expr: str, col_name: str, config: TabularConfig) -> str:
+    """Build a normalized SQL expression for a column, including per-column string_rules."""
+    expr = col_expr
+
+    # A) Global normalize_nulls
+    for null_val in config.compare.normalize_nulls:
+        expr = f"NULLIF({expr}, '{_escape_sql_str(null_val)}')"
+
+    # B) Parse per-column string rules
+    rules = config.string_rules.get(col_name, [])
+    simple_rules: set[str] = set()
+    regex_params = None
+    for rule in rules:
+        if isinstance(rule, str):
+            simple_rules.add(rule)
+        else:
+            regex_params = rule.regex_extract
+
+    # C) Trim: global OR per-column
+    if config.compare.trim_whitespace or "trim" in simple_rules:
+        expr = f"TRIM({expr})"
+
+    # D) Case insensitive: global OR per-column
+    if config.compare.case_insensitive or "case_insensitive" in simple_rules:
+        expr = f"LOWER({expr})"
+
+    # E) regex_extract (applied after trim/lower)
+    if regex_params is not None:
+        pat = _escape_sql_str(regex_params.pattern)
+        expr = f"regexp_extract({expr}, '{pat}', {regex_params.group})"
+
+    return expr
+
+
+def _build_eq_predicate(src_expr: str, tgt_expr: str, col_name: str, config: TabularConfig) -> str:
+    """Build a SQL equality predicate for a column pair.
+
+    Returns a SQL expression that evaluates to TRUE when values are considered equal.
+    """
+    # Tolerance check (numeric with string fallback)
+    if col_name in config.tolerance:
+        tol = config.tolerance[col_name]
+        return (
+            f"(CASE"
+            f" WHEN TRY_CAST({src_expr} AS DOUBLE) IS NOT NULL"
+            f" AND TRY_CAST({tgt_expr} AS DOUBLE) IS NOT NULL"
+            f" THEN abs(TRY_CAST({src_expr} AS DOUBLE) - TRY_CAST({tgt_expr} AS DOUBLE)) <= {tol}"
+            f" ELSE {src_expr} IS NOT DISTINCT FROM {tgt_expr}"
+            f" END)"
+        )
+
+    # Contains check (bidirectional LIKE)
+    rules = config.string_rules.get(col_name, [])
+    for rule in rules:
+        if rule == "contains":
+            return (
+                f"COALESCE("
+                f"({src_expr} IS NULL AND {tgt_expr} IS NULL)"
+                f" OR {src_expr} LIKE '%' || {tgt_expr} || '%'"
+                f" OR {tgt_expr} LIKE '%' || {src_expr} || '%'"
+                f", FALSE)"
+            )
+
+    # Default: IS NOT DISTINCT FROM
+    return f"({src_expr} IS NOT DISTINCT FROM {tgt_expr})"
+
+
+def _normalize_col_value(val: Any, col_name: str, config: TabularConfig) -> Any:
+    """Apply per-column normalization to a Python value."""
+    if val is None:
+        return None
+    s = str(val)
+    for null_val in config.compare.normalize_nulls:
+        if s == null_val:
+            return None
+
+    rules = config.string_rules.get(col_name, [])
+    simple_rules: set[str] = set()
+    regex_params = None
+    for rule in rules:
+        if isinstance(rule, str):
+            simple_rules.add(rule)
+        else:
+            regex_params = rule.regex_extract
+
+    if config.compare.trim_whitespace or "trim" in simple_rules:
+        s = s.strip()
+    if config.compare.case_insensitive or "case_insensitive" in simple_rules:
+        s = s.lower()
+    if regex_params is not None:
+        m = re.search(regex_params.pattern, s)
+        s = m.group(regex_params.group) if m else ""
+
+    return s
+
+
+def _are_values_equal(src_val: Any, tgt_val: Any, col_name: str, config: TabularConfig) -> bool:
+    """Python-side equality check for mismatch sample filtering."""
+    src_norm = _normalize_col_value(src_val, col_name, config)
+    tgt_norm = _normalize_col_value(tgt_val, col_name, config)
+
+    # Tolerance check
+    if col_name in config.tolerance:
+        if src_norm is not None and tgt_norm is not None:
+            try:
+                src_f = float(src_norm)
+                tgt_f = float(tgt_norm)
+                return abs(src_f - tgt_f) <= config.tolerance[col_name]
+            except (ValueError, TypeError):
+                pass
+        return src_norm == tgt_norm
+
+    # Contains check
+    rules = config.string_rules.get(col_name, [])
+    for rule in rules:
+        if rule == "contains":
+            if src_norm is None and tgt_norm is None:
+                return True
+            if src_norm is None or tgt_norm is None:
+                return False
+            return str(src_norm) in str(tgt_norm) or str(tgt_norm) in str(src_norm)
+
+    return src_norm == tgt_norm
+
+
 def _cell_count_expr(
     compared_columns: list[str],
-    norm_source: dict[str, str],
-    norm_target: dict[str, str],
+    eq_predicates: dict[str, str],
 ) -> str:
     """Build SQL expression that counts mismatched cells per row, then sums."""
     parts = []
     for c in compared_columns:
-        parts.append(
-            f"CASE WHEN ({norm_source[c]} IS DISTINCT FROM {norm_target[c]}) THEN 1 ELSE 0 END"
-        )
+        parts.append(f"CASE WHEN NOT ({eq_predicates[c]}) THEN 1 ELSE 0 END")
     return "SUM(" + " + ".join(parts) + ")"
 
 
@@ -558,13 +710,14 @@ def _fetch_mismatch_samples(
     compared_columns: list[str],
     norm_source: dict[str, str],
     norm_target: dict[str, str],
+    eq_predicates: dict[str, str],
     key_join_cond: str,
     limit: int,
+    src_compare_table: str,
+    tgt_compare_table: str,
 ) -> list[dict]:
     """Fetch value mismatch samples."""
-    mismatch_cond = " OR ".join(
-        f"({norm_source[c]} IS DISTINCT FROM {norm_target[c]})" for c in compared_columns
-    )
+    mismatch_cond = " OR ".join(f"NOT ({eq_predicates[c]})" for c in compared_columns)
     key_select = ", ".join(f's."{k}"' for k in keys)
     key_order = ", ".join(f's."{k}" ASC' for k in keys)
 
@@ -579,8 +732,8 @@ def _fetch_mismatch_samples(
            t._reconify_line_number AS target_line,
            {key_select},
            {", ".join(col_selects)}
-    FROM source_filtered s
-    INNER JOIN target_filtered t ON {key_join_cond}
+    FROM {src_compare_table} s
+    INNER JOIN {tgt_compare_table} t ON {key_join_cond}
     WHERE {mismatch_cond}
     ORDER BY {key_order}
     LIMIT {limit}
@@ -601,10 +754,7 @@ def _fetch_mismatch_samples(
         for c in compared_columns:
             src_val = row_dict.get(f"source_{c}")
             tgt_val = row_dict.get(f"target_{c}")
-            # Apply normalization to check if truly different
-            src_norm = _normalize_value(src_val, config)
-            tgt_norm = _normalize_value(tgt_val, config)
-            if src_norm != tgt_norm:
+            if not _are_values_equal(src_val, tgt_val, c, config):
                 columns[c] = {"source": src_val, "target": tgt_val}
         entry["columns"] = columns
         samples.append(entry)
@@ -612,7 +762,7 @@ def _fetch_mismatch_samples(
 
 
 def _normalize_value(val: Any, config: TabularConfig) -> Any:
-    """Apply normalization to a Python value for comparison."""
+    """Apply normalization to a Python value for comparison (global rules only)."""
     if val is None:
         return None
     s = str(val)
@@ -714,11 +864,11 @@ def _fetch_excluded_key_samples(
 
 def _compute_column_stats(
     con: duckdb.DuckDBPyConnection,
-    keys: list[str],
     compared_columns: list[str],
-    norm_source: dict[str, str],
-    norm_target: dict[str, str],
+    eq_predicates: dict[str, str],
     key_join_cond: str,
+    src_compare_table: str,
+    tgt_compare_table: str,
 ) -> dict[str, Any]:
     """Compute per-column mismatch counts for matched rows."""
     stats: dict[str, Any] = {}
@@ -726,13 +876,134 @@ def _compute_column_stats(
         count = con.execute(
             f"""
             SELECT count(*)
-            FROM source_filtered s
-            INNER JOIN target_filtered t ON {key_join_cond}
-            WHERE {norm_source[c]} IS DISTINCT FROM {norm_target[c]}
+            FROM {src_compare_table} s
+            INNER JOIN {tgt_compare_table} t ON {key_join_cond}
+            WHERE NOT ({eq_predicates[c]})
             """
         ).fetchone()[0]
         stats[c] = {"mismatched_count": count}
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Normalization pipeline helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_norm_arg(arg: Any, source_cols: set[str]) -> str:
+    """Resolve a normalization argument to a SQL expression.
+
+    Column names become quoted identifiers; everything else becomes a string literal.
+    """
+    if isinstance(arg, str) and arg in source_cols:
+        return f'"{arg}"'
+    if isinstance(arg, (int, float)):
+        return str(arg)
+    return f"'{_escape_sql_str(str(arg))}'"
+
+
+def _build_norm_step_sql(step: NormStep, prev_expr: str | None, source_cols: set[str]) -> str:
+    """Build SQL for a single NormStep in a normalization pipeline.
+
+    *prev_expr* is the result of the previous step (None for the first step).
+    For the first step, arguments supply all inputs.  For subsequent steps,
+    *prev_expr* is implicitly the first operand.
+    """
+    args = step.args
+
+    if step.op == NormOp.map:
+        if prev_expr:
+            base_expr = prev_expr
+            pair_args = args
+        else:
+            base_expr = _resolve_norm_arg(args[0], source_cols)
+            pair_args = args[1:]
+        cases = []
+        for i in range(0, len(pair_args), 2):
+            val = _resolve_norm_arg(pair_args[i], source_cols)
+            repl = _resolve_norm_arg(pair_args[i + 1], source_cols)
+            cases.append(f"WHEN {base_expr} = {val} THEN {repl}")
+        return f"CASE {' '.join(cases)} ELSE {base_expr} END"
+
+    if step.op == NormOp.concat:
+        if prev_expr:
+            parts = [prev_expr] + [_resolve_norm_arg(a, source_cols) for a in args]
+        else:
+            parts = [_resolve_norm_arg(a, source_cols) for a in args]
+        return "(" + " || ".join(parts) + ")"
+
+    if step.op == NormOp.substr:
+        if prev_expr:
+            base, start_idx = prev_expr, args[0]
+            length = args[1] if len(args) > 1 else None
+        else:
+            base = _resolve_norm_arg(args[0], source_cols)
+            start_idx = args[1]
+            length = args[2] if len(args) > 2 else None
+        if length is not None:
+            return f"SUBSTR({base}, {start_idx}, {length})"
+        return f"SUBSTR({base}, {start_idx})"
+
+    if step.op in (NormOp.add, NormOp.sub, NormOp.mul, NormOp.div):
+        op_map = {NormOp.add: "+", NormOp.sub: "-", NormOp.mul: "*", NormOp.div: "/"}
+        op_str = op_map[step.op]
+        if prev_expr:
+            a = f"TRY_CAST({prev_expr} AS DOUBLE)"
+            b = f"TRY_CAST({_resolve_norm_arg(args[0], source_cols)} AS DOUBLE)"
+        else:
+            a = f"TRY_CAST({_resolve_norm_arg(args[0], source_cols)} AS DOUBLE)"
+            b = f"TRY_CAST({_resolve_norm_arg(args[1], source_cols)} AS DOUBLE)"
+        return f"CAST(({a} {op_str} {b}) AS VARCHAR)"
+
+    if step.op == NormOp.coalesce:
+        if prev_expr:
+            parts = [prev_expr] + [_resolve_norm_arg(a, source_cols) for a in args]
+        else:
+            parts = [_resolve_norm_arg(a, source_cols) for a in args]
+        return f"COALESCE({', '.join(parts)})"
+
+    if step.op == NormOp.date_format:
+        if prev_expr:
+            base, from_fmt, to_fmt = prev_expr, args[0], args[1]
+        else:
+            base = _resolve_norm_arg(args[0], source_cols)
+            from_fmt, to_fmt = args[1], args[2]
+        return (
+            f"strftime(strptime({base}, "
+            f"'{_escape_sql_str(str(from_fmt))}'), "
+            f"'{_escape_sql_str(str(to_fmt))}')"
+        )
+
+    if step.op == NormOp.upper:
+        base = prev_expr if prev_expr else _resolve_norm_arg(args[0], source_cols)
+        return f"UPPER({base})"
+
+    if step.op == NormOp.lower:
+        base = prev_expr if prev_expr else _resolve_norm_arg(args[0], source_cols)
+        return f"LOWER({base})"
+
+    if step.op == NormOp.trim:
+        base = prev_expr if prev_expr else _resolve_norm_arg(args[0], source_cols)
+        return f"TRIM({base})"
+
+    if step.op == NormOp.round:
+        if prev_expr:
+            base = prev_expr
+            precision = int(args[0]) if args else 0
+        else:
+            base = _resolve_norm_arg(args[0], source_cols)
+            precision = int(args[1]) if len(args) > 1 else 0
+        return f"CAST(ROUND(TRY_CAST({base} AS DOUBLE), {precision}) AS VARCHAR)"
+
+    raise ValueError(f"Unknown NormOp: {step.op}")
+
+
+def _build_normalization_pipeline(pipeline: list[NormStep], source_cols: set[str]) -> str:
+    """Chain a list of NormSteps into a single SQL expression."""
+    prev_expr: str | None = None
+    for step in pipeline:
+        prev_expr = _build_norm_step_sql(step, prev_expr, source_cols)
+    return prev_expr
 
 
 # ---------------------------------------------------------------------------

@@ -568,3 +568,136 @@ class TestTabularColumnStatsDisabled:
         assert report["details"]["column_stats"] == {}
         _assert_no_row_filters(report["details"]["filters_applied"])
         _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: ignore_columns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularIgnoreColumns:
+    def test_ignore_columns_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_ignore_columns_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 2
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["summary"]["mismatched_cells"] == 0
+        # "notes" should not be in compared_columns
+        assert "notes" not in report["details"]["compared_columns"]
+        assert "name" in report["details"]["compared_columns"]
+        assert "value" in report["details"]["compared_columns"]
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: tolerance (absolute, per column)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularTolerance:
+    def test_tolerance_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_tolerance_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 3
+        assert report["summary"]["target_rows"] == 3
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["summary"]["mismatched_cells"] == 0
+        assert "amount" in report["details"]["compared_columns"]
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: string_rules - contains
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularStringRulesContains:
+    def test_string_rules_contains_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_string_rules_contains_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 2
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["summary"]["mismatched_cells"] == 0
+        assert "description" in report["details"]["compared_columns"]
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: string_rules - regex_extract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularStringRulesRegexExtract:
+    def test_string_rules_regex_extract_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_string_rules_regex_extract_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 2
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["summary"]["mismatched_cells"] == 0
+        assert "code" in report["details"]["compared_columns"]
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: normalization virtual columns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularNormalizationVirtualColumn:
+    def test_normalization_virtual_column_exit_0(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_normalization_virtual_column_exit0")
+        assert exit_code == 0
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 2
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["rows_with_mismatches"] == 0
+        assert report["summary"]["mismatched_cells"] == 0
+        # full_name is a virtual column created via normalization
+        assert "full_name" in report["details"]["compared_columns"]
+        # email is a shared column between source and target
+        assert "email" in report["details"]["compared_columns"]
+        # first_name and last_name are source-only, not in target
+        assert "first_name" not in report["details"]["compared_columns"]
+        assert "last_name" not in report["details"]["compared_columns"]
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)
+
+
+# ---------------------------------------------------------------------------
+# NEW: missing detection with NULL/empty keys
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestTabularMissingDetectionNullKeys:
+    def test_missing_detection_null_keys_exit_1(self, e2e_runner):
+        exit_code, report = e2e_runner("tabular_missing_detection_null_keys_exit1")
+        assert exit_code == 1
+        _assert_tabular_base(report)
+        assert report["summary"]["source_rows"] == 3
+        assert report["summary"]["target_rows"] == 2
+        assert report["summary"]["missing_in_target"] == 1
+        assert report["summary"]["missing_in_source"] == 0
+
+        missing_tgt = report["samples"]["missing_in_target"]
+        assert len(missing_tgt) == 1
+        assert missing_tgt[0]["key"]["id"] == "2"
+        _assert_line_numbers(missing_tgt[0], "source")
+        _assert_no_row_filters(report["details"]["filters_applied"])
+        _assert_read_rows_relationship(report)

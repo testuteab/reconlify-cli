@@ -1,0 +1,8 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys: [id]
+normalization:
+  full_name:
+    - op: concat
+      args: [first_name, " ", last_name]

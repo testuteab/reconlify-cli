@@ -45,6 +45,19 @@ class NormStep(BaseModel):
     args: list[Any] = Field(default_factory=list)
 
 
+class RegexExtractParams(BaseModel):
+    pattern: str = Field(min_length=1)
+    group: int = Field(default=1, ge=0)
+
+
+class RegexExtractRule(BaseModel):
+    regex_extract: RegexExtractParams
+
+
+SimpleStringRule = Literal["trim", "case_insensitive", "contains"]
+StringRuleItem = SimpleStringRule | RegexExtractRule
+
+
 class TabularCompare(BaseModel):
     include_columns: list[str] | None = None
     exclude_columns: list[str] | None = None
@@ -129,6 +142,10 @@ class TabularConfig(BaseModel):
     csv: TabularCsvOptions = Field(default_factory=TabularCsvOptions)
     sampling: TabularSampling = Field(default_factory=TabularSampling)
     output: TabularOutput = Field(default_factory=TabularOutput)
+    ignore_columns: list[str] = Field(default_factory=list)
+    tolerance: dict[str, float] = Field(default_factory=dict)
+    string_rules: dict[str, list[StringRuleItem]] = Field(default_factory=dict)
+    normalization: dict[str, list[NormStep]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check_exclude_keys(self) -> TabularConfig:
@@ -141,6 +158,28 @@ class TabularConfig(BaseModel):
                     f"filters.exclude_keys[{i}] has keys {sorted(entry_keys)} "
                     f"but expected exactly {sorted(key_set)}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _check_tolerance(self) -> TabularConfig:
+        for col, val in self.tolerance.items():
+            if val < 0:
+                raise ValueError(f"tolerance[{col!r}]: value must be >= 0, got {val}")
+        return self
+
+    @model_validator(mode="after")
+    def _check_normalization(self) -> TabularConfig:
+        generated = set(self.normalization.keys())
+        for col_name, pipeline in self.normalization.items():
+            if not pipeline:
+                raise ValueError(f"normalization[{col_name!r}]: pipeline must not be empty")
+            for step in pipeline:
+                for arg in step.args:
+                    if isinstance(arg, str) and arg in generated:
+                        raise ValueError(
+                            f"normalization[{col_name!r}]: arg {arg!r} references "
+                            f"a generated column"
+                        )
         return self
 
 

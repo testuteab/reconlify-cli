@@ -1,0 +1,9 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys: [id]
+string_rules:
+  code:
+    - regex_extract:
+        pattern: '(\d+)'
+        group: 1
