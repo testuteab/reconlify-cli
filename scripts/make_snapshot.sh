@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT}/.artifacts"
-OUT_FILE="${OUT_DIR}/PROJECT_SNAPSHOT.txt"
+OUT_FILE="${OUT_DIR}/RECONIFY_CLI_PROJECT_SNAPSHOT.txt"
 
 mkdir -p "$OUT_DIR"
 
