@@ -601,6 +601,104 @@ def test_replace_regex_count(tmp_path):
     assert report["details"]["rules_applied"]["replace_rules_count"] == 3
 
 
+def test_line_by_line_raw_and_processed_fields(tmp_path):
+    """With replace_regex, samples include both raw and processed content.
+
+    - source_raw / target_raw reflect original file content.
+    - source_processed / target_processed reflect post-pipeline content.
+    - source == source_processed and target == target_processed (deprecated aliases).
+    """
+    source = tmp_path / "source.txt"
+    source.write_text("id=123 data\nid=456 data\n")
+
+    target = tmp_path / "target.txt"
+    target.write_text("id=AAA data\nid=BBB other\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        replace_regex=[{"pattern": r"id=\S+", "replace": "id=X"}],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 1
+    samples = report["samples"]
+    # Line 1: after replace both become "id=X data", so they match.
+    # Line 2: source "id=X data" != target "id=X other" → diff.
+    assert len(samples) == 1
+
+    s = samples[0]
+    # Raw fields contain original file content
+    assert s["source_raw"] == "id=456 data"
+    assert s["target_raw"] == "id=BBB other"
+    # Processed fields contain post-replacement content
+    assert s["source_processed"] == "id=X data"
+    assert s["target_processed"] == "id=X other"
+    # Processed differs from raw
+    assert s["source_raw"] != s["source_processed"]
+    assert s["target_raw"] != s["target_processed"]
+    # Deprecated aliases equal processed
+    assert s["source"] == s["source_processed"]
+    assert s["target"] == s["target_processed"]
+
+
+def test_line_by_line_raw_equals_processed_without_rules(tmp_path):
+    """Without normalization rules, raw and processed content are identical."""
+    source = tmp_path / "source.txt"
+    source.write_text("aaa\nbbb\n")
+
+    target = tmp_path / "target.txt"
+    target.write_text("aaa\nccc\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 1
+    samples = report["samples"]
+    assert len(samples) == 1
+    s = samples[0]
+    assert s["source_raw"] == s["source_processed"] == "bbb"
+    assert s["target_raw"] == s["target_processed"] == "ccc"
+    assert s["source"] == s["source_processed"]
+    assert s["target"] == s["target_processed"]
+
+
+def test_line_by_line_raw_and_processed_exhausted_side(tmp_path):
+    """When one side is exhausted, raw and processed fields are empty strings."""
+    source = tmp_path / "source.txt"
+    source.write_text("aaa\nbbb\n")
+
+    target = tmp_path / "target.txt"
+    target.write_text("aaa\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 1
+    samples = report["samples"]
+    assert len(samples) == 1
+    s = samples[0]
+    # Source has content
+    assert s["source_raw"] == "bbb"
+    assert s["source_processed"] == "bbb"
+    # Target exhausted → empty strings
+    assert s["target_raw"] == ""
+    assert s["target_processed"] == ""
+    assert s["line_number_target"] is None
+
+
 def test_file_not_found_returns_exit_2(tmp_path):
     """Missing files should return exit code 2 with structured error."""
     cfg = TextConfig(

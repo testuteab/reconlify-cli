@@ -591,6 +591,10 @@ A JSON list of diff entries. Limited to `--sample-limit` items (default
   {
     "line_number_source": int | null,
     "line_number_target": int | null,
+    "source_raw": string,
+    "target_raw": string,
+    "source_processed": string,
+    "target_processed": string,
     "source": string,
     "target": string,
     "processed_line_number_source": int | null,
@@ -603,12 +607,22 @@ A JSON list of diff entries. Limited to `--sample-limit` items (default
 |----------------------------------|----------|-------------|
 | `line_number_source`             | always   | **Original raw file line number** (1-based) in the source file, before any normalization or dropping. `null` when source is exhausted (target is longer at this position). |
 | `line_number_target`             | always   | Same as above, for target. `null` when target is exhausted (source is longer). |
-| `source`                         | always   | The processed line content from source. Empty string `""` when source is exhausted. |
-| `target`                         | always   | The processed line content from target. Empty string `""` when target is exhausted. |
+| `source_raw`                     | always   | The **original raw line content** from source, before any pipeline processing (trim, collapse, case, replace). Empty string `""` when source is exhausted. |
+| `target_raw`                     | always   | Same as above, for target. |
+| `source_processed`               | always   | The **processed line content** from source, after all pipeline steps (trim, collapse, case, replace). This is the value used for comparison. Empty string `""` when source is exhausted. |
+| `target_processed`               | always   | Same as above, for target. |
+| `source`                         | always   | **Deprecated alias** of `source_processed`. Retained for backward compatibility — new consumers should use `source_processed`. |
+| `target`                         | always   | **Deprecated alias** of `target_processed`. Retained for backward compatibility — new consumers should use `target_processed`. |
 | `processed_line_number_source`   | only with `--debug-report` | 1-based index in the processed stream (after filtering/dropping). Debug-only field, omitted by default. `null` when source is exhausted. |
 | `processed_line_number_target`   | only with `--debug-report` | Same as above, for target. |
 
-**Audit note:** Use `line_number_source` / `line_number_target` to locate
+**Audit note:** Use `source_raw` / `target_raw` to see the original file
+content at each differing position, and `source_processed` / `target_processed`
+to see the values after the normalization pipeline. When `replace_regex` or
+other normalization is active, comparing raw vs processed helps auditors
+understand exactly what the pipeline changed.
+
+Use `line_number_source` / `line_number_target` to locate
 differences in the original files. When one side is `null`, it means that
 side has fewer lines at this position — look at the non-null side to see the
 extra content.
@@ -693,12 +707,20 @@ but counts differ, some occurrences of this line were added or removed.
     {
       "line_number_source": 2,
       "line_number_target": null,
+      "source_raw": "bbb",
+      "target_raw": "",
+      "source_processed": "bbb",
+      "target_processed": "",
       "source": "bbb",
       "target": ""
     },
     {
       "line_number_source": 3,
       "line_number_target": null,
+      "source_raw": "ccc",
+      "target_raw": "",
+      "source_processed": "ccc",
+      "target_processed": "",
       "source": "ccc",
       "target": ""
     }
@@ -848,7 +870,17 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 4):**
+**This revision (v1.1 doc update, revision 5):**
+
+- **Raw + processed line content in line_by_line samples:** Each sample entry
+  now includes `source_raw`, `target_raw`, `source_processed`, and
+  `target_processed` fields. `source_raw` / `target_raw` contain the original
+  file content before any pipeline processing; `source_processed` /
+  `target_processed` contain the content after all normalization steps. The
+  existing `source` / `target` fields are retained as deprecated aliases of
+  `source_processed` / `target_processed` for backward compatibility.
+
+**Previous revision (v1.1 doc update, revision 4):**
 
 - **NULL-safe key matching:** Tabular engine now uses `IS NOT DISTINCT FROM`
   for key joins, correctly matching rows where key columns contain NULL values.

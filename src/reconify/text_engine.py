@@ -67,7 +67,7 @@ def _apply_pipeline(
 
 
 class _LineStream:
-    """Streaming line processor yielding (line, orig_line_num, processed_line_num).
+    """Streaming line processor yielding (raw_line, processed_line, orig_line_num, processed_line_num).
 
     After exhaustion, drop_count, replace_count, and total_lines are available.
     """
@@ -121,7 +121,7 @@ class _LineStream:
             if result is None:
                 continue
             self.total_lines += 1
-            yield result, orig_line_num, self.total_lines
+            yield raw_line, result, orig_line_num, self.total_lines
 
     def _raw_lines(self):
         """Yield raw lines from the file, streaming in both modes."""
@@ -167,23 +167,30 @@ def _compare_line_by_line(
         src_missing = src_item is _SENTINEL
         tgt_missing = tgt_item is _SENTINEL
 
-        src_line = "" if src_missing else src_item[0]
-        tgt_line = "" if tgt_missing else tgt_item[0]
-        src_orig = None if src_missing else src_item[1]
-        tgt_orig = None if tgt_missing else tgt_item[1]
+        src_processed = "" if src_missing else src_item[1]
+        tgt_processed = "" if tgt_missing else tgt_item[1]
+        src_raw = "" if src_missing else src_item[0]
+        tgt_raw = "" if tgt_missing else tgt_item[0]
+        src_orig = None if src_missing else src_item[2]
+        tgt_orig = None if tgt_missing else tgt_item[2]
 
-        if src_missing or tgt_missing or src_line != tgt_line:
+        if src_missing or tgt_missing or src_processed != tgt_processed:
             different += 1
             if len(samples) < sample_limit:
                 entry: dict[str, Any] = {
                     "line_number_source": src_orig,
                     "line_number_target": tgt_orig,
-                    "source": src_line,
-                    "target": tgt_line,
+                    "source_raw": src_raw,
+                    "target_raw": tgt_raw,
+                    "source_processed": src_processed,
+                    "target_processed": tgt_processed,
+                    # Deprecated aliases — use source_processed / target_processed.
+                    "source": src_processed,
+                    "target": tgt_processed,
                 }
                 if debug_report:
-                    entry["processed_line_number_source"] = None if src_missing else src_item[2]
-                    entry["processed_line_number_target"] = None if tgt_missing else tgt_item[2]
+                    entry["processed_line_number_source"] = None if src_missing else src_item[3]
+                    entry["processed_line_number_target"] = None if tgt_missing else tgt_item[3]
                 samples.append(entry)
 
     return different, samples
@@ -236,14 +243,14 @@ def _compare_unordered(
     tgt_index: dict[str, list[int]] = {}
 
     # Build counters and line indexes by streaming
-    for line, orig_num, _ in source_stream:
+    for _raw, line, orig_num, _ in source_stream:
         source_counts[line] += 1
         if include_line_numbers:
             lst = src_index.setdefault(line, [])
             if len(lst) < max_line_numbers:
                 lst.append(orig_num)
 
-    for line, orig_num, _ in target_stream:
+    for _raw, line, orig_num, _ in target_stream:
         target_counts[line] += 1
         if include_line_numbers:
             lst = tgt_index.setdefault(line, [])
