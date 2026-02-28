@@ -37,3 +37,4 @@ snapshot: ## Build a single-file PROJECT_SNAPSHOT into .artifacts
 build: ## Run poetry build and pip install
 	poetry build
 	pip install dist/*.whl
+	pip install --user --force-reinstall dist/*.whl
