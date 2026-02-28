@@ -515,14 +515,14 @@ lines will always report `read_lines_* == N`.
 
 **Blank line definition:** The text engine applies a 7-step normalization
 pipeline to each raw line in order: (1) normalize_newlines, (2) trim_lines,
-(3) collapse_whitespace, (4) replace_regex, (5) case_insensitive,
-(6) ignore_blank_lines, (7) drop_lines_regex. A line is counted in
+(3) collapse_whitespace, (4) replace_regex, (5) ignore_blank_lines,
+(6) drop_lines_regex, (7) case_insensitive. A line is counted in
 `ignored_blank_lines_*` **only** when `normalize.ignore_blank_lines` is `true`
-**and** the line is the empty string `""` at step 6 — that is, after trim,
-collapse, replace, and case have already been applied. For example, a line
+**and** the line is the empty string `""` at step 5 — that is, after trim,
+collapse, and replace have already been applied. For example, a line
 containing only whitespace will be counted here if `trim_lines` or
 `collapse_whitespace` reduces it to `""`. This count does **not** include
-lines removed by `drop_lines_regex` (step 7); those are counted separately in
+lines removed by `drop_lines_regex` (step 6); those are counted separately in
 `rules_applied.drop_lines_count`.
 | `rules_applied`              | always   | Counts of rule application effects. See below. |
 | `unordered_stats`            | only in `unordered_lines` mode | Aggregate breakdown of unordered mismatches. Omitted in `line_by_line` mode. Always present when mode is `unordered_lines`, regardless of whether differences exist. |
@@ -607,9 +607,9 @@ A JSON list of diff entries. Limited to `--sample-limit` items (default
 |----------------------------------|----------|-------------|
 | `line_number_source`             | always   | **Original raw file line number** (1-based) in the source file, before any normalization or dropping. `null` when source is exhausted (target is longer at this position). |
 | `line_number_target`             | always   | Same as above, for target. `null` when target is exhausted (source is longer). |
-| `raw_source`                     | always   | The **original raw line content** from source, before any pipeline processing (trim, collapse, case, replace). Empty string `""` when source is exhausted. |
+| `raw_source`                     | always   | The **original raw line content** from source, before any pipeline processing (trim, collapse, replace, drop, case). Empty string `""` when source is exhausted. |
 | `raw_target`                     | always   | Same as above, for target. |
-| `processed_source`               | always   | The **processed line content** from source, after all pipeline steps (trim, collapse, case, replace). This is the value used for comparison. Empty string `""` when source is exhausted. |
+| `processed_source`               | always   | The **processed line content** from source, after all pipeline steps (trim, collapse, replace, drop, case). This is the value used for comparison. Empty string `""` when source is exhausted. |
 | `processed_target`               | always   | Same as above, for target. |
 | `source`                         | always   | **Deprecated alias** of `processed_source`. Retained for backward compatibility — new consumers should use `processed_source`. |
 | `target`                         | always   | **Deprecated alias** of `processed_target`. Retained for backward compatibility — new consumers should use `processed_target`. |
@@ -870,7 +870,17 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 5):**
+**This revision (v1.1 doc update, revision 6):**
+
+- **Pipeline ordering fix — drop_lines_regex before case folding:** The
+  normalization pipeline now evaluates `drop_lines_regex` (step 6) **before**
+  `case_insensitive` lowering (step 7). Previously, lowercasing ran first,
+  which silently broke drop patterns containing uppercase literals (e.g.
+  `\[HEARTBEAT\]` would not match the already-lowercased `[heartbeat]`).
+  The corrected full order is: trim → collapse → replace_regex →
+  ignore_blank → drop_lines_regex → case_insensitive.
+
+**Previous revision (v1.1 doc update, revision 5):**
 
 - **Raw + processed line content in line_by_line samples:** Each sample entry
   now includes `raw_source`, `raw_target`, `processed_source`, and
@@ -879,12 +889,12 @@ filtering/processing fields in `details`.
   `processed_target` contain the content after all normalization steps. The
   existing `source` / `target` fields are retained as backward-compatible
   aliases of `processed_source` / `processed_target`.
-- **Pipeline ordering fix:** The normalization pipeline now applies
-  `replace_regex` (step 4) **before** `case_insensitive` lowering (step 5).
-  Previously `case_insensitive` ran first, which silently broke regex patterns
-  containing uppercase literals (e.g. `T` and `Z` in ISO-8601 timestamps).
-  The new order is: trim → collapse → replace_regex → case_insensitive →
-  ignore_blank → drop_lines.
+- **Pipeline ordering fix — replace_regex before case folding:** The
+  normalization pipeline now applies `replace_regex` (step 4) **before**
+  `case_insensitive` lowering. Previously `case_insensitive` ran first, which
+  silently broke regex patterns containing uppercase literals (e.g. `T` and
+  `Z` in ISO-8601 timestamps). The order at this revision was: trim →
+  collapse → replace_regex → case_insensitive → ignore_blank → drop_lines.
 
 **Previous revision (v1.1 doc update, revision 4):**
 

@@ -52,18 +52,21 @@ def _apply_pipeline(
         line, n = pattern.subn(replacement, line)
         replace_count += n
 
-    # 5) case_insensitive
-    if norm.case_insensitive:
-        line = line.lower()
-
-    # 6) ignore_blank_lines
+    # 5) ignore_blank_lines (before drop/case so blank detection uses
+    #    the post-replace content, same as before)
     if norm.ignore_blank_lines and line == "":
         return None, replace_count, False
 
-    # 7) drop_lines_regex
+    # 6) drop_lines_regex (before case folding so patterns match the
+    #    original casing, e.g. [HEARTBEAT] still matches when
+    #    case_insensitive=true)
     for dp in drop_patterns:
         if dp.search(line):
             return None, replace_count, True
+
+    # 7) case_insensitive (last transform — only reached for kept lines)
+    if norm.case_insensitive:
+        line = line.lower()
 
     return line, replace_count, False
 

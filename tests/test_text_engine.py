@@ -763,6 +763,44 @@ def test_raw_preserves_casing_processed_lowercased(tmp_path):
     assert s["target"] == "goodbye world"
 
 
+def test_drop_lines_regex_with_case_insensitive(tmp_path):
+    """drop_lines_regex must match original casing even when case_insensitive=true.
+
+    Regression: the old pipeline lowercased BEFORE evaluating drop_lines_regex,
+    so a pattern like \\[HEARTBEAT\\] would not match the lowercased
+    '[heartbeat]' and the line would leak through.
+    """
+    source = tmp_path / "source.txt"
+    source.write_text(
+        "2025-02-10T06:00:05.000Z [HEARTBEAT] rid=abc status=alive\n"
+        "data line one\n"
+    )
+
+    target = tmp_path / "target.txt"
+    target.write_text(
+        "2025-02-10T06:00:07.000Z [HEARTBEAT] rid=xyz status=alive\n"
+        "data line one\n"
+    )
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True},
+        drop_lines_regex=[r"\[HEARTBEAT\]"],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    # Heartbeat lines are dropped; only "data line one" remains on both sides.
+    assert exit_code == 0, f"Expected exit 0, got {exit_code}. Report: {report}"
+    assert report["summary"]["different_lines"] == 0
+    assert report["summary"]["total_lines_source"] == 1
+    assert report["summary"]["total_lines_target"] == 1
+    # Both heartbeat lines were dropped
+    assert report["details"]["rules_applied"]["drop_lines_count"] == 2
+
+
 def test_file_not_found_returns_exit_2(tmp_path):
     """Missing files should return exit code 2 with structured error."""
     cfg = TextConfig(
