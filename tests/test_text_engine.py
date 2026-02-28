@@ -604,9 +604,9 @@ def test_replace_regex_count(tmp_path):
 def test_line_by_line_raw_and_processed_fields(tmp_path):
     """With replace_regex, samples include both raw and processed content.
 
-    - source_raw / target_raw reflect original file content.
-    - source_processed / target_processed reflect post-pipeline content.
-    - source == source_processed and target == target_processed (deprecated aliases).
+    - raw_source / raw_target reflect original file content.
+    - processed_source / processed_target reflect post-pipeline content.
+    - source == processed_source and target == processed_target (deprecated aliases).
     """
     source = tmp_path / "source.txt"
     source.write_text("id=123 data\nid=456 data\n")
@@ -631,17 +631,17 @@ def test_line_by_line_raw_and_processed_fields(tmp_path):
 
     s = samples[0]
     # Raw fields contain original file content
-    assert s["source_raw"] == "id=456 data"
-    assert s["target_raw"] == "id=BBB other"
+    assert s["raw_source"] == "id=456 data"
+    assert s["raw_target"] == "id=BBB other"
     # Processed fields contain post-replacement content
-    assert s["source_processed"] == "id=X data"
-    assert s["target_processed"] == "id=X other"
+    assert s["processed_source"] == "id=X data"
+    assert s["processed_target"] == "id=X other"
     # Processed differs from raw
-    assert s["source_raw"] != s["source_processed"]
-    assert s["target_raw"] != s["target_processed"]
+    assert s["raw_source"] != s["processed_source"]
+    assert s["raw_target"] != s["processed_target"]
     # Deprecated aliases equal processed
-    assert s["source"] == s["source_processed"]
-    assert s["target"] == s["target_processed"]
+    assert s["source"] == s["processed_source"]
+    assert s["target"] == s["processed_target"]
 
 
 def test_line_by_line_raw_equals_processed_without_rules(tmp_path):
@@ -664,10 +664,10 @@ def test_line_by_line_raw_equals_processed_without_rules(tmp_path):
     samples = report["samples"]
     assert len(samples) == 1
     s = samples[0]
-    assert s["source_raw"] == s["source_processed"] == "bbb"
-    assert s["target_raw"] == s["target_processed"] == "ccc"
-    assert s["source"] == s["source_processed"]
-    assert s["target"] == s["target_processed"]
+    assert s["raw_source"] == s["processed_source"] == "bbb"
+    assert s["raw_target"] == s["processed_target"] == "ccc"
+    assert s["source"] == s["processed_source"]
+    assert s["target"] == s["processed_target"]
 
 
 def test_line_by_line_raw_and_processed_exhausted_side(tmp_path):
@@ -691,12 +691,76 @@ def test_line_by_line_raw_and_processed_exhausted_side(tmp_path):
     assert len(samples) == 1
     s = samples[0]
     # Source has content
-    assert s["source_raw"] == "bbb"
-    assert s["source_processed"] == "bbb"
+    assert s["raw_source"] == "bbb"
+    assert s["processed_source"] == "bbb"
     # Target exhausted → empty strings
-    assert s["target_raw"] == ""
-    assert s["target_processed"] == ""
+    assert s["raw_target"] == ""
+    assert s["processed_target"] == ""
     assert s["line_number_target"] is None
+
+
+def test_replace_regex_with_case_insensitive(tmp_path):
+    """replace_regex must still match when case_insensitive=true.
+
+    Regression: the old pipeline lowercased BEFORE applying replace_regex,
+    so patterns like 'T' and 'Z' in ISO-8601 timestamps would not match.
+    The fixed pipeline applies replace_regex first, then lowercases.
+    """
+    source = tmp_path / "source.txt"
+    source.write_text("2025-02-10T06:00:00.000Z\n")
+
+    target = tmp_path / "target.txt"
+    target.write_text("2026-01-01T12:00:00.000Z\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True},
+        replace_regex=[
+            {"pattern": r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", "replace": "<TS>"}
+        ],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    # Both lines should become "<ts>" (replacement then lowercase), so match.
+    assert exit_code == 0, f"Expected exit 0. Report: {report}"
+    assert report["summary"]["different_lines"] == 0
+    # Replacement should have fired on both lines
+    assert report["details"]["rules_applied"]["replace_rules_count"] == 2
+
+
+def test_raw_preserves_casing_processed_lowercased(tmp_path):
+    """raw_source preserves original casing; processed_source reflects lowercasing."""
+    source = tmp_path / "source.txt"
+    source.write_text("Hello World\n")
+
+    target = tmp_path / "target.txt"
+    target.write_text("GOODBYE WORLD\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True},
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 1
+    samples = report["samples"]
+    assert len(samples) == 1
+    s = samples[0]
+    # Raw preserves original casing
+    assert s["raw_source"] == "Hello World"
+    assert s["raw_target"] == "GOODBYE WORLD"
+    # Processed is lowercased
+    assert s["processed_source"] == "hello world"
+    assert s["processed_target"] == "goodbye world"
+    # Deprecated aliases match processed
+    assert s["source"] == "hello world"
+    assert s["target"] == "goodbye world"
 
 
 def test_file_not_found_returns_exit_2(tmp_path):

@@ -45,14 +45,16 @@ def _apply_pipeline(
     if norm.collapse_whitespace:
         line = _WS_RE.sub(" ", line).strip()
 
-    # 4) case_insensitive
-    if norm.case_insensitive:
-        line = line.lower()
-
-    # 5) replace_regex rules sequentially
+    # 4) replace_regex rules sequentially (before case folding so
+    #    patterns can match original casing, e.g. "T" and "Z" in
+    #    ISO-8601 timestamps)
     for pattern, replacement in replace_rules:
         line, n = pattern.subn(replacement, line)
         replace_count += n
+
+    # 5) case_insensitive
+    if norm.case_insensitive:
+        line = line.lower()
 
     # 6) ignore_blank_lines
     if norm.ignore_blank_lines and line == "":
@@ -67,7 +69,7 @@ def _apply_pipeline(
 
 
 class _LineStream:
-    """Streaming line processor yielding (raw_line, processed_line, orig_line_num, processed_line_num).
+    """Streaming line processor yielding (processed_line, orig_line_num, processed_line_num, raw_line).
 
     After exhaustion, drop_count, replace_count, and total_lines are available.
     """
@@ -121,7 +123,7 @@ class _LineStream:
             if result is None:
                 continue
             self.total_lines += 1
-            yield raw_line, result, orig_line_num, self.total_lines
+            yield result, orig_line_num, self.total_lines, raw_line
 
     def _raw_lines(self):
         """Yield raw lines from the file, streaming in both modes."""
@@ -167,12 +169,13 @@ def _compare_line_by_line(
         src_missing = src_item is _SENTINEL
         tgt_missing = tgt_item is _SENTINEL
 
-        src_processed = "" if src_missing else src_item[1]
-        tgt_processed = "" if tgt_missing else tgt_item[1]
-        src_raw = "" if src_missing else src_item[0]
-        tgt_raw = "" if tgt_missing else tgt_item[0]
-        src_orig = None if src_missing else src_item[2]
-        tgt_orig = None if tgt_missing else tgt_item[2]
+        # Tuple layout: (processed_line, orig_line_num, processed_line_num, raw_line)
+        src_processed = "" if src_missing else src_item[0]
+        tgt_processed = "" if tgt_missing else tgt_item[0]
+        src_orig = None if src_missing else src_item[1]
+        tgt_orig = None if tgt_missing else tgt_item[1]
+        src_raw = "" if src_missing else src_item[3]
+        tgt_raw = "" if tgt_missing else tgt_item[3]
 
         if src_missing or tgt_missing or src_processed != tgt_processed:
             different += 1
@@ -180,17 +183,16 @@ def _compare_line_by_line(
                 entry: dict[str, Any] = {
                     "line_number_source": src_orig,
                     "line_number_target": tgt_orig,
-                    "source_raw": src_raw,
-                    "target_raw": tgt_raw,
-                    "source_processed": src_processed,
-                    "target_processed": tgt_processed,
-                    # Deprecated aliases — use source_processed / target_processed.
+                    "raw_source": src_raw,
+                    "raw_target": tgt_raw,
+                    "processed_source": src_processed,
+                    "processed_target": tgt_processed,
                     "source": src_processed,
                     "target": tgt_processed,
                 }
                 if debug_report:
-                    entry["processed_line_number_source"] = None if src_missing else src_item[3]
-                    entry["processed_line_number_target"] = None if tgt_missing else tgt_item[3]
+                    entry["processed_line_number_source"] = None if src_missing else src_item[2]
+                    entry["processed_line_number_target"] = None if tgt_missing else tgt_item[2]
                 samples.append(entry)
 
     return different, samples
@@ -243,14 +245,15 @@ def _compare_unordered(
     tgt_index: dict[str, list[int]] = {}
 
     # Build counters and line indexes by streaming
-    for _raw, line, orig_num, _ in source_stream:
+    # Tuple layout: (processed_line, orig_line_num, processed_line_num, raw_line)
+    for line, orig_num, _, _raw in source_stream:
         source_counts[line] += 1
         if include_line_numbers:
             lst = src_index.setdefault(line, [])
             if len(lst) < max_line_numbers:
                 lst.append(orig_num)
 
-    for _raw, line, orig_num, _ in target_stream:
+    for line, orig_num, _, _raw in target_stream:
         target_counts[line] += 1
         if include_line_numbers:
             lst = tgt_index.setdefault(line, [])

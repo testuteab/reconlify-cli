@@ -515,11 +515,11 @@ lines will always report `read_lines_* == N`.
 
 **Blank line definition:** The text engine applies a 7-step normalization
 pipeline to each raw line in order: (1) normalize_newlines, (2) trim_lines,
-(3) collapse_whitespace, (4) case_insensitive, (5) replace_regex,
+(3) collapse_whitespace, (4) replace_regex, (5) case_insensitive,
 (6) ignore_blank_lines, (7) drop_lines_regex. A line is counted in
 `ignored_blank_lines_*` **only** when `normalize.ignore_blank_lines` is `true`
 **and** the line is the empty string `""` at step 6 — that is, after trim,
-collapse, case, and replace have already been applied. For example, a line
+collapse, replace, and case have already been applied. For example, a line
 containing only whitespace will be counted here if `trim_lines` or
 `collapse_whitespace` reduces it to `""`. This count does **not** include
 lines removed by `drop_lines_regex` (step 7); those are counted separately in
@@ -591,10 +591,10 @@ A JSON list of diff entries. Limited to `--sample-limit` items (default
   {
     "line_number_source": int | null,
     "line_number_target": int | null,
-    "source_raw": string,
-    "target_raw": string,
-    "source_processed": string,
-    "target_processed": string,
+    "raw_source": string,
+    "raw_target": string,
+    "processed_source": string,
+    "processed_target": string,
     "source": string,
     "target": string,
     "processed_line_number_source": int | null,
@@ -607,17 +607,17 @@ A JSON list of diff entries. Limited to `--sample-limit` items (default
 |----------------------------------|----------|-------------|
 | `line_number_source`             | always   | **Original raw file line number** (1-based) in the source file, before any normalization or dropping. `null` when source is exhausted (target is longer at this position). |
 | `line_number_target`             | always   | Same as above, for target. `null` when target is exhausted (source is longer). |
-| `source_raw`                     | always   | The **original raw line content** from source, before any pipeline processing (trim, collapse, case, replace). Empty string `""` when source is exhausted. |
-| `target_raw`                     | always   | Same as above, for target. |
-| `source_processed`               | always   | The **processed line content** from source, after all pipeline steps (trim, collapse, case, replace). This is the value used for comparison. Empty string `""` when source is exhausted. |
-| `target_processed`               | always   | Same as above, for target. |
-| `source`                         | always   | **Deprecated alias** of `source_processed`. Retained for backward compatibility — new consumers should use `source_processed`. |
-| `target`                         | always   | **Deprecated alias** of `target_processed`. Retained for backward compatibility — new consumers should use `target_processed`. |
+| `raw_source`                     | always   | The **original raw line content** from source, before any pipeline processing (trim, collapse, case, replace). Empty string `""` when source is exhausted. |
+| `raw_target`                     | always   | Same as above, for target. |
+| `processed_source`               | always   | The **processed line content** from source, after all pipeline steps (trim, collapse, case, replace). This is the value used for comparison. Empty string `""` when source is exhausted. |
+| `processed_target`               | always   | Same as above, for target. |
+| `source`                         | always   | **Deprecated alias** of `processed_source`. Retained for backward compatibility — new consumers should use `processed_source`. |
+| `target`                         | always   | **Deprecated alias** of `processed_target`. Retained for backward compatibility — new consumers should use `processed_target`. |
 | `processed_line_number_source`   | only with `--debug-report` | 1-based index in the processed stream (after filtering/dropping). Debug-only field, omitted by default. `null` when source is exhausted. |
 | `processed_line_number_target`   | only with `--debug-report` | Same as above, for target. |
 
-**Audit note:** Use `source_raw` / `target_raw` to see the original file
-content at each differing position, and `source_processed` / `target_processed`
+**Audit note:** Use `raw_source` / `raw_target` to see the original file
+content at each differing position, and `processed_source` / `processed_target`
 to see the values after the normalization pipeline. When `replace_regex` or
 other normalization is active, comparing raw vs processed helps auditors
 understand exactly what the pipeline changed.
@@ -707,20 +707,20 @@ but counts differ, some occurrences of this line were added or removed.
     {
       "line_number_source": 2,
       "line_number_target": null,
-      "source_raw": "bbb",
-      "target_raw": "",
-      "source_processed": "bbb",
-      "target_processed": "",
+      "raw_source": "bbb",
+      "raw_target": "",
+      "processed_source": "bbb",
+      "processed_target": "",
       "source": "bbb",
       "target": ""
     },
     {
       "line_number_source": 3,
       "line_number_target": null,
-      "source_raw": "ccc",
-      "target_raw": "",
-      "source_processed": "ccc",
-      "target_processed": "",
+      "raw_source": "ccc",
+      "raw_target": "",
+      "processed_source": "ccc",
+      "processed_target": "",
       "source": "ccc",
       "target": ""
     }
@@ -873,12 +873,18 @@ filtering/processing fields in `details`.
 **This revision (v1.1 doc update, revision 5):**
 
 - **Raw + processed line content in line_by_line samples:** Each sample entry
-  now includes `source_raw`, `target_raw`, `source_processed`, and
-  `target_processed` fields. `source_raw` / `target_raw` contain the original
-  file content before any pipeline processing; `source_processed` /
-  `target_processed` contain the content after all normalization steps. The
-  existing `source` / `target` fields are retained as deprecated aliases of
-  `source_processed` / `target_processed` for backward compatibility.
+  now includes `raw_source`, `raw_target`, `processed_source`, and
+  `processed_target` fields. `raw_source` / `raw_target` contain the original
+  file content before any pipeline processing; `processed_source` /
+  `processed_target` contain the content after all normalization steps. The
+  existing `source` / `target` fields are retained as backward-compatible
+  aliases of `processed_source` / `processed_target`.
+- **Pipeline ordering fix:** The normalization pipeline now applies
+  `replace_regex` (step 4) **before** `case_insensitive` lowering (step 5).
+  Previously `case_insensitive` ran first, which silently broke regex patterns
+  containing uppercase literals (e.g. `T` and `Z` in ISO-8601 timestamps).
+  The new order is: trim → collapse → replace_regex → case_insensitive →
+  ignore_blank → drop_lines.
 
 **Previous revision (v1.1 doc update, revision 4):**
 

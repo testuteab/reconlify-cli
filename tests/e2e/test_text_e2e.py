@@ -48,15 +48,15 @@ def _assert_line_by_line_samples(report):
         assert "line_number_source" in sample
         assert "line_number_target" in sample
         # Raw + processed fields
-        assert "source_raw" in sample
-        assert "target_raw" in sample
-        assert "source_processed" in sample
-        assert "target_processed" in sample
+        assert "raw_source" in sample
+        assert "raw_target" in sample
+        assert "processed_source" in sample
+        assert "processed_target" in sample
         # Deprecated aliases equal processed
         assert "source" in sample
         assert "target" in sample
-        assert sample["source"] == sample["source_processed"]
-        assert sample["target"] == sample["target_processed"]
+        assert sample["source"] == sample["processed_source"]
+        assert sample["target"] == sample["processed_target"]
 
 
 def _assert_unordered_report(report):
