@@ -10,6 +10,7 @@ from typing import Literal
 from reconify.models import (
     ReconError,
     ReconReport,
+    ReportCsvInfo,
     RowFiltersInfo,
     TabularConfig,
     TabularDetails,
@@ -51,6 +52,11 @@ def build_report(cfg: TabularConfig | TextConfig) -> ReconReport:
                     )
                     if (cfg.filters.row_filters and cfg.filters.row_filters.rules)
                     else None,
+                ),
+                csv=ReportCsvInfo(
+                    delimiter=cfg.csv.delimiter,
+                    encoding=cfg.csv.encoding,
+                    header=cfg.csv.header,
                 ),
             ),
         )
@@ -122,6 +128,8 @@ def write_report(report: ReconReport, path: str) -> None:
     if isinstance(details, dict):
         if "unordered_stats" in details and details["unordered_stats"] is None:
             del details["unordered_stats"]
+        if "csv" in details and details["csv"] is None:
+            del details["csv"]
         # Omit row_filters from filters_applied when not enabled
         fa = details.get("filters_applied")
         if isinstance(fa, dict) and "row_filters" in fa and fa["row_filters"] is None:

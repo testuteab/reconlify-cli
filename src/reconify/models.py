@@ -255,6 +255,14 @@ class TabularFiltersApplied(BaseModel):
     row_filters: RowFiltersInfo | None = None
 
 
+class ReportCsvInfo(BaseModel):
+    """Effective CSV settings used by the tabular engine."""
+
+    delimiter: str = ","
+    encoding: str = "utf-8"
+    header: bool = True
+
+
 class TabularDetails(BaseModel):
     format: str = "csv"
     keys: list[str] = Field(default_factory=list)
@@ -263,6 +271,7 @@ class TabularDetails(BaseModel):
     read_rows_target: int = 0
     filters_applied: TabularFiltersApplied = Field(default_factory=TabularFiltersApplied)
     column_stats: dict[str, Any] = Field(default_factory=dict)
+    csv: ReportCsvInfo | None = None
 
 
 class TextRulesApplied(BaseModel):

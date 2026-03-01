@@ -113,19 +113,21 @@ relationship is:
   "read_rows_source": int,
   "read_rows_target": int,
   "filters_applied": { ... },
-  "column_stats": { ... }
+  "column_stats": { ... },
+  "csv": { ... }
 }
 ```
 
-| Field               | Description |
-|---------------------|-------------|
-| `format`            | Always `"csv"` in V1. |
-| `keys`              | List of column names used as the composite primary key for matching rows between source and target. |
-| `compared_columns`  | Sorted list of non-key columns that were compared. Determined by the intersection of source and target columns, then narrowed by `compare.include_columns` / `compare.exclude_columns` if configured. |
-| `read_rows_source`  | Total rows read from the raw source CSV **before** any filtering. |
-| `read_rows_target`  | Total rows read from the raw target CSV **before** any filtering. |
-| `filters_applied`   | Breakdown of which rows were excluded and why. See below. |
-| `column_stats`      | Per-column mismatch counts. Always present; empty `{}` when `output.include_column_stats` is false or there are no compared columns. |
+| Field               | Presence | Description |
+|---------------------|----------|-------------|
+| `format`            | always   | Always `"csv"` in V1. |
+| `keys`              | always   | List of column names used as the composite primary key for matching rows between source and target. |
+| `compared_columns`  | always   | Sorted list of non-key columns that were compared. Determined by the intersection of source and target columns, then narrowed by `compare.include_columns` / `compare.exclude_columns` if configured. |
+| `read_rows_source`  | always   | Total rows read from the raw source CSV **before** any filtering. |
+| `read_rows_target`  | always   | Total rows read from the raw target CSV **before** any filtering. |
+| `filters_applied`   | always   | Breakdown of which rows were excluded and why. See below. |
+| `column_stats`      | always   | Per-column mismatch counts. Always present; empty `{}` when `output.include_column_stats` is false or there are no compared columns. |
+| `csv`               | optional | The **effective** CSV parsing settings used by the engine (after applying defaults). See below. Omitted in error reports where the engine did not run. |
 
 **Invariants:**
 
@@ -136,6 +138,30 @@ read_rows_target - filters_applied.target_excluded_rows == summary.target_rows
 
 **Audit note:** Compare `read_rows_source` to `source_rows`. If they differ,
 rows were excluded by filtering. Check `filters_applied` for the breakdown.
+
+### details.csv (optional)
+
+The effective CSV parsing settings used by the engine. These reflect the
+config values after applying defaults — if the user did not specify a
+delimiter, this will show `","` (the default).
+
+```json
+{
+  "delimiter": ",",
+  "encoding": "utf-8",
+  "header": true
+}
+```
+
+| Field       | Description |
+|-------------|-------------|
+| `delimiter` | Column delimiter character used to parse both CSV files. Default `","`. |
+| `encoding`  | Character encoding used to read both CSV files. Currently only `"utf-8"` is supported. |
+| `header`    | Whether the first row of each CSV file is treated as a header row. Default `true`. |
+
+**Audit note:** Check `details.csv` to confirm the engine parsed the files
+with the expected settings. A wrong delimiter is a common cause of
+"all rows mismatched" results.
 
 ### details.filters_applied
 
@@ -373,6 +399,11 @@ inadvertently removing important data from the comparison.
     "column_stats": {
       "name": { "mismatched_count": 0 },
       "value": { "mismatched_count": 0 }
+    },
+    "csv": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "header": true
     }
   },
   "samples": {
@@ -425,6 +456,11 @@ inadvertently removing important data from the comparison.
       "name": { "mismatched_count": 0 },
       "status": { "mismatched_count": 0 },
       "value": { "mismatched_count": 0 }
+    },
+    "csv": {
+      "delimiter": ",",
+      "encoding": "utf-8",
+      "header": true
     }
   },
   "samples": {
@@ -870,7 +906,16 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 6):**
+**This revision (v1.1 doc update, revision 7):**
+
+- **`details.csv` in tabular reports:** Tabular reports now include an
+  optional `details.csv` object containing the effective CSV parsing settings
+  (`delimiter`, `encoding`, `header`) used by the engine. This helps auditors
+  confirm the files were parsed with the expected settings. The field is
+  omitted in error reports where the engine did not run. Backward compatible —
+  older consumers that do not expect this field will ignore it.
+
+**Previous revision (v1.1 doc update, revision 6):**
 
 - **Pipeline ordering fix — drop_lines_regex before case folding:** The
   normalization pipeline now evaluates `drop_lines_regex` (step 6) **before**

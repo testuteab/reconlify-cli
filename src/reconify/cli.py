@@ -154,7 +154,7 @@ def _run_text(
 
 def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
     """Execute tabular engine comparison and write report."""
-    from reconify.models import TabularDetails, TabularFiltersApplied, TabularSummary
+    from reconify.models import ReportCsvInfo, TabularDetails, TabularFiltersApplied, TabularSummary
     from reconify.tabular_engine import compare_tabular
 
     result, exit_code = compare_tabular(cfg)
@@ -172,6 +172,11 @@ def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
         read_rows_target=result["details"]["read_rows_target"],
         filters_applied=TabularFiltersApplied(**result["details"]["filters_applied"]),
         column_stats=result["details"]["column_stats"],
+        csv=ReportCsvInfo(
+            delimiter=cfg.csv.delimiter,
+            encoding=cfg.csv.encoding,
+            header=cfg.csv.header,
+        ),
     )
 
     # For tabular, samples is a dict of lists
