@@ -17,7 +17,7 @@ Exit codes:
 ```json
 {
   "type": "tabular" | "text",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "ISO-8601 timestamp",
   "config_hash": "sha256 hex string",
   "summary": { ... },
@@ -31,7 +31,7 @@ Exit codes:
 | Field          | Type              | Presence  | Description |
 |----------------|-------------------|-----------|-------------|
 | `type`         | string            | always    | `"tabular"` or `"text"` — matches the config `type`. |
-| `version`      | string            | always    | Schema version. Currently `"1.2"`. |
+| `version`      | string            | always    | Schema version. Currently `"1.3"`. |
 | `generated_at` | string            | always    | ISO-8601 UTC timestamp of when the report was created. Not deterministic; do not use for equality checks. |
 | `config_hash`  | string            | always    | **Best-effort** SHA-256 hex digest. When the config is successfully parsed, this is the hash of the canonical JSON-serialized Pydantic model — two runs with identical configs produce the same hash. On error reports where config was not fully parsed, this falls back to the hash of the raw YAML string, or `""` if the file could not be read at all. Do not rely on hash stability across Reconify versions. |
 | `summary`      | object            | always    | Aggregate counts. Structure differs by `type`. Zeroed out when `error` is present. |
@@ -369,7 +369,7 @@ inadvertently removing important data from the comparison.
 ```json
 {
   "type": "tabular",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "abc123...",
   "summary": {
@@ -420,7 +420,7 @@ inadvertently removing important data from the comparison.
 ```json
 {
   "type": "tabular",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "def456...",
   "summary": {
@@ -568,8 +568,8 @@ lines removed by `drop_lines_regex` (step 6); those are counted separately in
 | `rules_applied`              | always   | Counts of rule application effects. See below. |
 | `normalize`                  | always   | The effective normalization settings used by the engine. See below. |
 | `unordered_stats`            | only in `unordered_lines` mode | Aggregate breakdown of unordered mismatches. Omitted in `line_by_line` mode. Always present when mode is `unordered_lines`, regardless of whether differences exist. |
-| `dropped_samples`            | only in `line_by_line` mode | List of audit samples for lines removed by `drop_lines_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
-| `replacement_samples`        | only in `line_by_line` mode | List of audit samples for lines modified by `replace_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
+| `dropped_samples`            | always   | List of audit samples for lines removed by `drop_lines_regex`. Capped at `--sample-limit` per side. Always present (may be `[]`). See below. |
+| `replacement_samples`        | always   | List of audit samples for lines modified by `replace_regex`. Capped at `--sample-limit` per side. Always present (may be `[]`). See below. |
 
 **Invariant:**
 
@@ -660,10 +660,10 @@ differences exist. Omitted entirely in `line_by_line` mode.
 contents are involved in the mismatch. A high `different_lines` with a low
 `distinct_mismatched_lines` means a few lines are repeated many times.
 
-### details.dropped_samples (line_by_line mode only)
+### details.dropped_samples
 
 List of concrete line-level evidence of lines removed by `drop_lines_regex`.
-Present only in `line_by_line` mode; omitted in `unordered_lines` mode.
+Always present in both `line_by_line` and `unordered_lines` modes.
 Defaults to `[]` when no lines were dropped.
 
 ```json
@@ -693,12 +693,12 @@ the first N encountered per side are stored.
 pattern matched. This is correct and useful — it shows the full
 transformation chain.
 
-### details.replacement_samples (line_by_line mode only)
+### details.replacement_samples
 
 List of concrete line-level evidence of lines modified by `replace_regex`.
 Each entry represents a **distinct line** and contains an array of all
-rules that fired on that line. Present only in `line_by_line` mode; omitted
-in `unordered_lines` mode. Defaults to `[]` when no replacements fired.
+rules that fired on that line. Always present in both `line_by_line` and
+`unordered_lines` modes. Defaults to `[]` when no replacements fired.
 
 ```json
 [
@@ -836,7 +836,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "aaa111...",
   "summary": {
@@ -897,7 +897,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "ccc333...",
   "summary": {
@@ -969,7 +969,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.2",
+  "version": "1.3",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "bbb222...",
   "summary": {
@@ -1001,7 +1001,9 @@ but counts differ, some occurrences of this line were added or removed.
       "source_only_lines": 2,
       "target_only_lines": 2,
       "distinct_mismatched_lines": 2
-    }
+    },
+    "dropped_samples": [],
+    "replacement_samples": []
   },
   "samples": [],
   "samples_agg": [
@@ -1090,8 +1092,8 @@ filtering/processing fields in `details`.
 | `samples`              | list of diffs    | always `[]`           |
 | `samples_agg`          | absent           | present when diffs > 0 |
 | `unordered_stats`      | absent           | always present        |
-| `dropped_samples`      | always present (may be `[]`) | absent     |
-| `replacement_samples`  | always present (may be `[]`) | absent     |
+| `dropped_samples`      | always present (may be `[]`) | always present (may be `[]`) |
+| `replacement_samples`  | always present (may be `[]`) | always present (may be `[]`) |
 | `processed_line_number_*` | with `--debug-report` | N/A            |
 
 ## CLI-flag-dependent fields (text engine)
@@ -1117,7 +1119,17 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.2, revision 9):**
+**This revision (v1.3, revision 10):**
+
+- **Version bumped to 1.3** to reflect schema changes in audit sample availability.
+- **Audit samples in unordered_lines mode:** `dropped_samples` and
+  `replacement_samples` are now always present in `details` for both
+  `line_by_line` and `unordered_lines` modes. Previously these fields were
+  only emitted in `line_by_line` mode and omitted entirely in `unordered_lines`
+  mode. Both default to `[]` when no rules fired. Same sample structures and
+  `--sample-limit` capping behavior apply in both modes.
+
+**Previous revision (v1.2, revision 9):**
 
 - **Version bumped to 1.2** to reflect schema changes in replacement tracking.
 - **Multi-rule replacement samples:** `replacement_samples[].pattern` and

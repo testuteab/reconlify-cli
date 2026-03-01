@@ -515,12 +515,13 @@ def compare_text(
         "details": details,
     }
 
+    details["dropped_samples"] = src_stream.dropped_samples + tgt_stream.dropped_samples
+    details["replacement_samples"] = (
+        src_stream.replacement_samples + tgt_stream.replacement_samples
+    )
+
     if config.mode == TextMode.line_by_line:
         report_dict["samples"] = samples
-        details["dropped_samples"] = src_stream.dropped_samples + tgt_stream.dropped_samples
-        details["replacement_samples"] = (
-            src_stream.replacement_samples + tgt_stream.replacement_samples
-        )
     else:
         details["unordered_stats"] = unordered_stats
         report_dict["samples"] = []

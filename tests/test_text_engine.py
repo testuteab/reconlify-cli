@@ -840,7 +840,7 @@ def test_cli_text_run(tmp_path):
     assert report_path.exists()
     data = json.loads(report_path.read_text())
     assert data["type"] == "text"
-    assert data["version"] == "1.2"
+    assert data["version"] == "1.3"
     assert data["summary"]["different_lines"] == 0
     assert data["summary"]["total_lines_source"] == 2
     # No error field in successful reports
@@ -1171,8 +1171,8 @@ def test_audit_samples_empty_when_no_rules(tmp_path):
     assert report["details"]["replacement_samples"] == []
 
 
-def test_audit_samples_not_in_unordered_mode(tmp_path):
-    """Unordered mode -> dropped_samples and replacement_samples keys absent."""
+def test_audit_samples_present_in_unordered_mode(tmp_path):
+    """Unordered mode -> dropped_samples and replacement_samples always present."""
     source = tmp_path / "source.txt"
     source.write_text("# comment\nalpha\n")
     target = tmp_path / "target.txt"
@@ -1188,8 +1188,15 @@ def test_audit_samples_not_in_unordered_mode(tmp_path):
 
     report, _exit_code = compare_text(cfg)
 
-    assert "dropped_samples" not in report["details"]
-    assert "replacement_samples" not in report["details"]
+    assert "dropped_samples" in report["details"]
+    assert "replacement_samples" in report["details"]
+    # Dropped sample should have the comment line
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 1
+    assert ds[0]["side"] == "source"
+    assert ds[0]["raw"] == "# comment"
+    # No replacements configured
+    assert report["details"]["replacement_samples"] == []
 
 
 def test_dropped_and_replaced_same_line(tmp_path):
@@ -1335,6 +1342,110 @@ def test_normalize_in_cli_report(tmp_path):
     assert result.exit_code == 0
     data = json.loads(report_path.read_text())
     assert data["details"]["normalize"]["case_insensitive"] is True
+
+
+def test_unordered_audit_samples_empty_when_no_rules(tmp_path):
+    """Unordered mode with no rules -> both audit sample lists are empty."""
+    source = tmp_path / "source.txt"
+    source.write_text("aaa\nbbb\n")
+    target = tmp_path / "target.txt"
+    target.write_text("bbb\nccc\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, _exit_code = compare_text(cfg)
+
+    assert report["details"]["dropped_samples"] == []
+    assert report["details"]["replacement_samples"] == []
+
+
+def test_unordered_dropped_samples_populated(tmp_path):
+    """Unordered mode with drop_lines_regex -> dropped_samples populated with correct fields."""
+    source = tmp_path / "source.txt"
+    source.write_text("# header\nalpha\n# footer\nbeta\n")
+    target = tmp_path / "target.txt"
+    target.write_text("alpha\nbeta\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+        drop_lines_regex=["^#"],
+    )
+
+    report, _exit_code = compare_text(cfg)
+
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 2
+    assert ds[0]["side"] == "source"
+    assert ds[0]["line_number"] == 1
+    assert ds[0]["raw"] == "# header"
+    assert ds[0]["processed"] == "# header"
+    assert ds[1]["side"] == "source"
+    assert ds[1]["line_number"] == 3
+    assert ds[1]["raw"] == "# footer"
+    assert report["details"]["replacement_samples"] == []
+
+
+def test_unordered_replacement_samples_multi_rule(tmp_path):
+    """Unordered mode with replace_regex -> replacement_samples with multi-rule support."""
+    source = tmp_path / "source.txt"
+    source.write_text("id=123 date=2024-01-15\nalpha\n")
+    target = tmp_path / "target.txt"
+    target.write_text("id=X date=DATE\nalpha\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+        replace_regex=[
+            {"pattern": r"id=\d+", "replace": "id=X"},
+            {"pattern": r"\d{4}-\d{2}-\d{2}", "replace": "DATE"},
+        ],
+    )
+
+    report, _exit_code = compare_text(cfg)
+
+    rs = report["details"]["replacement_samples"]
+    # Both source and target lines with id/date get replacement samples
+    assert len(rs) >= 1
+    # Check first sample has the expected multi-rule structure
+    src_samples = [s for s in rs if s["side"] == "source"]
+    assert len(src_samples) == 1
+    assert src_samples[0]["raw"] == "id=123 date=2024-01-15"
+    assert src_samples[0]["processed"] == "id=X date=DATE"
+    assert len(src_samples[0]["rules"]) == 2
+    assert src_samples[0]["rules"][0]["pattern"] == r"id=\d+"
+    assert src_samples[0]["rules"][1]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+
+
+def test_unordered_audit_samples_capped_by_sample_limit(tmp_path):
+    """Unordered mode respects --sample-limit for audit samples per side."""
+    source = tmp_path / "source.txt"
+    # 20 lines that will be dropped
+    source.write_text("\n".join(f"# line {i}" for i in range(20)) + "\nalpha\n")
+    target = tmp_path / "target.txt"
+    target.write_text("alpha\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+        drop_lines_regex=["^#"],
+    )
+
+    report, _exit_code = compare_text(cfg, sample_limit=5)
+
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 5  # capped at sample_limit per side
 
 
 def test_performance_line_by_line_large(tmp_path):

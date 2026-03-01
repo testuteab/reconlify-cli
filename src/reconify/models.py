@@ -336,7 +336,7 @@ class ReconError(BaseModel):
 
 class ReconReport(BaseModel):
     type: Literal["tabular", "text"]
-    version: str = "1.2"
+    version: str = "1.3"
     generated_at: str
     config_hash: str
     summary: TabularSummary | TextSummary
