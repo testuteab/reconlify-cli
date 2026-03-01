@@ -17,7 +17,7 @@ Exit codes:
 ```json
 {
   "type": "tabular" | "text",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "ISO-8601 timestamp",
   "config_hash": "sha256 hex string",
   "summary": { ... },
@@ -31,7 +31,7 @@ Exit codes:
 | Field          | Type              | Presence  | Description |
 |----------------|-------------------|-----------|-------------|
 | `type`         | string            | always    | `"tabular"` or `"text"` — matches the config `type`. |
-| `version`      | string            | always    | Schema version. Currently `"1.1"`. |
+| `version`      | string            | always    | Schema version. Currently `"1.2"`. |
 | `generated_at` | string            | always    | ISO-8601 UTC timestamp of when the report was created. Not deterministic; do not use for equality checks. |
 | `config_hash`  | string            | always    | **Best-effort** SHA-256 hex digest. When the config is successfully parsed, this is the hash of the canonical JSON-serialized Pydantic model — two runs with identical configs produce the same hash. On error reports where config was not fully parsed, this falls back to the hash of the raw YAML string, or `""` if the file could not be read at all. Do not rely on hash stability across Reconify versions. |
 | `summary`      | object            | always    | Aggregate counts. Structure differs by `type`. Zeroed out when `error` is present. |
@@ -369,7 +369,7 @@ inadvertently removing important data from the comparison.
 ```json
 {
   "type": "tabular",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "abc123...",
   "summary": {
@@ -420,7 +420,7 @@ inadvertently removing important data from the comparison.
 ```json
 {
   "type": "tabular",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "def456...",
   "summary": {
@@ -527,8 +527,11 @@ lines, the raw file has more lines than reported here. Check
   "ignored_blank_lines_target": int,
   "rules_applied": {
     "drop_lines_count": int,
-    "replace_rules_count": int
+    "replace_rules_count": int,
+    "replacement_lines_affected": int,
+    "replacement_applications": int
   },
+  "normalize": { ... },
   "unordered_stats": { ... },
   "dropped_samples": [ ... ],
   "replacement_samples": [ ... ]
@@ -563,6 +566,7 @@ containing only whitespace will be counted here if `trim_lines` or
 lines removed by `drop_lines_regex` (step 6); those are counted separately in
 `rules_applied.drop_lines_count`.
 | `rules_applied`              | always   | Counts of rule application effects. See below. |
+| `normalize`                  | always   | The effective normalization settings used by the engine. See below. |
 | `unordered_stats`            | only in `unordered_lines` mode | Aggregate breakdown of unordered mismatches. Omitted in `line_by_line` mode. Always present when mode is `unordered_lines`, regardless of whether differences exist. |
 | `dropped_samples`            | only in `line_by_line` mode | List of audit samples for lines removed by `drop_lines_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
 | `replacement_samples`        | only in `line_by_line` mode | List of audit samples for lines modified by `replace_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
@@ -584,17 +588,52 @@ configured, `read_lines_source == total_lines_source`.
 ```json
 {
   "drop_lines_count": int,
-  "replace_rules_count": int
+  "replace_rules_count": int,
+  "replacement_lines_affected": int,
+  "replacement_applications": int
 }
 ```
 
-| Field                 | Description |
-|-----------------------|-------------|
-| `drop_lines_count`    | Total number of lines **actually dropped** by `drop_lines_regex` patterns across both source and target files combined. This is the count of lines removed, not the number of regex patterns configured. |
-| `replace_rules_count` | Total number of regex substitutions **actually applied** by `replace_regex` rules across both source and target files combined. This is the count of individual replacements that fired, not the number of rules configured. A single rule can fire on many lines. |
+| Field                          | Description |
+|--------------------------------|-------------|
+| `drop_lines_count`             | Total number of lines **actually dropped** by `drop_lines_regex` patterns across both source and target files combined. This is the count of lines removed, not the number of regex patterns configured. |
+| `replace_rules_count`          | Number of `replace_regex` rules **configured** in the config. This is the count of patterns, not the number of times they fired. |
+| `replacement_lines_affected`   | Number of distinct lines (across both source and target) where at least one `replace_regex` rule matched. If a line matches 2 rules, it counts as 1 affected line. |
+| `replacement_applications`     | Total number of individual regex substitutions **actually applied** across all lines in both files combined. If one line matches 2 rules, that contributes 2. If a single rule matches twice on one line, that contributes 2. |
 
-**Caveat:** These are runtime effect counts, not config counts. If you need
-to know how many rules were *configured*, check the original config.
+**Caveat:** `drop_lines_count` and `replacement_applications` are runtime
+effect counts. `replace_rules_count` is a config count. Use
+`replacement_lines_affected` vs `replacement_applications` to distinguish
+"how many lines were touched" from "how many substitutions were made."
+
+### details.normalize
+
+The effective normalization settings used by the engine. Always present.
+These reflect the config values after applying defaults — fields not
+explicitly set in the config will show their default values.
+
+```json
+{
+  "ignore_blank_lines": false,
+  "trim_lines": false,
+  "collapse_whitespace": false,
+  "case_insensitive": false,
+  "normalize_newlines": true
+}
+```
+
+| Field                  | Description |
+|------------------------|-------------|
+| `ignore_blank_lines`   | Whether blank lines were removed before comparison. |
+| `trim_lines`           | Whether leading/trailing whitespace was stripped from each line. |
+| `collapse_whitespace`  | Whether runs of whitespace were collapsed to a single space. |
+| `case_insensitive`     | Whether lines were lowercased before comparison. **UI hint:** when `true`, case-only differences between `raw` and `processed` in samples are normalization effects, not replacement-rule effects. |
+| `normalize_newlines`   | Whether CRLF/CR line endings were translated to LF. |
+
+**Audit note:** Check `case_insensitive` to determine whether case-only
+differences between `raw` and `processed` values in replacement/diff samples
+are due to normalization (lowercasing) rather than `replace_regex` rules.
+UI consumers can use this flag to suppress highlighting of case-only changes.
 
 ### details.unordered_stats
 
@@ -657,8 +696,9 @@ transformation chain.
 ### details.replacement_samples (line_by_line mode only)
 
 List of concrete line-level evidence of lines modified by `replace_regex`.
-Present only in `line_by_line` mode; omitted in `unordered_lines` mode.
-Defaults to `[]` when no replacements fired.
+Each entry represents a **distinct line** and contains an array of all
+rules that fired on that line. Present only in `line_by_line` mode; omitted
+in `unordered_lines` mode. Defaults to `[]` when no replacements fired.
 
 ```json
 [
@@ -667,8 +707,13 @@ Defaults to `[]` when no replacements fired.
     "line_number": int,
     "raw": string,
     "processed": string,
-    "pattern": string | null,
-    "replace": string | null
+    "rules": [
+      {
+        "pattern": string,
+        "replace": string,
+        "matches": int
+      }
+    ]
   }
 ]
 ```
@@ -679,14 +724,15 @@ Defaults to `[]` when no replacements fired.
 | `line_number` | **Original raw file line number** (1-based) of the replaced line. |
 | `raw`         | The original raw line content before any pipeline processing. |
 | `processed`   | For kept lines: the final comparison value (after all pipeline steps including case folding). For dropped lines: the line content at the point of drop (pre-case-fold). |
-| `pattern`     | The regex pattern string of the **first** replace rule that fired on this line. `null` if unavailable. |
-| `replace`     | The replacement string of the **first** replace rule that fired on this line. `null` if unavailable. |
+| `rules`       | Array of rules that fired on this line, in the order they were applied. Each entry contains `pattern` (the regex pattern string), `replace` (the replacement string), and `matches` (how many times this rule matched on this line, >= 1). |
 
 **Truncation:** Same as `dropped_samples` — capped per side at `--sample-limit`.
 
-**Audit note:** `pattern` and `replace` show the first rule that matched.
-If multiple replace rules fire on the same line, only the first is recorded.
-Compare `raw` to `processed` to see the cumulative effect of all rules.
+**Audit note:** When multiple rules fire on a single line, all are listed
+in `rules`. Use `rules[].matches` to see how many substitutions each rule
+made. Compare `raw` to `processed` to see the cumulative effect. When
+`details.normalize.case_insensitive` is `true`, case-only differences
+between `raw` and `processed` are due to lowercasing, not replacement rules.
 
 ## samples (line_by_line mode)
 
@@ -790,7 +836,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "aaa111...",
   "summary": {
@@ -807,7 +853,16 @@ but counts differ, some occurrences of this line were added or removed.
     "ignored_blank_lines_target": 0,
     "rules_applied": {
       "drop_lines_count": 0,
-      "replace_rules_count": 0
+      "replace_rules_count": 0,
+      "replacement_lines_affected": 0,
+      "replacement_applications": 0
+    },
+    "normalize": {
+      "ignore_blank_lines": false,
+      "trim_lines": false,
+      "collapse_whitespace": false,
+      "case_insensitive": false,
+      "normalize_newlines": true
     },
     "dropped_samples": [],
     "replacement_samples": []
@@ -842,7 +897,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "ccc333...",
   "summary": {
@@ -859,7 +914,16 @@ but counts differ, some occurrences of this line were added or removed.
     "ignored_blank_lines_target": 0,
     "rules_applied": {
       "drop_lines_count": 2,
-      "replace_rules_count": 4
+      "replace_rules_count": 1,
+      "replacement_lines_affected": 4,
+      "replacement_applications": 4
+    },
+    "normalize": {
+      "ignore_blank_lines": false,
+      "trim_lines": false,
+      "collapse_whitespace": false,
+      "case_insensitive": false,
+      "normalize_newlines": true
     },
     "dropped_samples": [
       {
@@ -881,16 +945,18 @@ but counts differ, some occurrences of this line were added or removed.
         "line_number": 2,
         "raw": "alpha 2024-01-15 value",
         "processed": "alpha DATE value",
-        "pattern": "\\d{4}-\\d{2}-\\d{2}",
-        "replace": "DATE"
+        "rules": [
+          { "pattern": "\\d{4}-\\d{2}-\\d{2}", "replace": "DATE", "matches": 1 }
+        ]
       },
       {
         "side": "target",
         "line_number": 2,
         "raw": "alpha 2025-12-01 value",
         "processed": "alpha DATE value",
-        "pattern": "\\d{4}-\\d{2}-\\d{2}",
-        "replace": "DATE"
+        "rules": [
+          { "pattern": "\\d{4}-\\d{2}-\\d{2}", "replace": "DATE", "matches": 1 }
+        ]
       }
     ]
   },
@@ -903,7 +969,7 @@ but counts differ, some occurrences of this line were added or removed.
 ```json
 {
   "type": "text",
-  "version": "1.1",
+  "version": "1.2",
   "generated_at": "2026-01-15T12:00:00+00:00",
   "config_hash": "bbb222...",
   "summary": {
@@ -920,7 +986,16 @@ but counts differ, some occurrences of this line were added or removed.
     "ignored_blank_lines_target": 0,
     "rules_applied": {
       "drop_lines_count": 0,
-      "replace_rules_count": 0
+      "replace_rules_count": 0,
+      "replacement_lines_affected": 0,
+      "replacement_applications": 0
+    },
+    "normalize": {
+      "ignore_blank_lines": false,
+      "trim_lines": false,
+      "collapse_whitespace": false,
+      "case_insensitive": false,
+      "normalize_newlines": true
     },
     "unordered_stats": {
       "source_only_lines": 2,
@@ -1004,7 +1079,7 @@ filtering/processing fields in `details`.
 | Field / Section             | Tabular          | Text                |
 |-----------------------------|------------------|---------------------|
 | `summary` fields            | source_rows, target_rows, missing_in_target, missing_in_source, rows_with_mismatches, mismatched_cells | total_lines_source, total_lines_target, different_lines |
-| `details` fields            | format, keys, compared_columns, read_rows_source/target, filters_applied, column_stats | mode, read_lines_source/target, ignored_blank_lines_source/target, rules_applied, unordered_stats, dropped_samples, replacement_samples |
+| `details` fields            | format, keys, compared_columns, read_rows_source/target, filters_applied, column_stats | mode, read_lines_source/target, ignored_blank_lines_source/target, rules_applied, normalize, unordered_stats, dropped_samples, replacement_samples |
 | `samples` type              | dict (4 category lists) | list (flat) |
 | `samples_agg`               | never present    | unordered_lines mode only |
 
@@ -1042,7 +1117,31 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 8):**
+**This revision (v1.2, revision 9):**
+
+- **Version bumped to 1.2** to reflect schema changes in replacement tracking.
+- **Multi-rule replacement samples:** `replacement_samples[].pattern` and
+  `replacement_samples[].replace` are replaced by `replacement_samples[].rules`,
+  an array of `{pattern, replace, matches}` objects. Each entry represents a
+  distinct line, and the `rules` array lists every `replace_regex` rule that
+  fired on that line (in application order) with per-rule match counts. This
+  allows the UI to truthfully report "N lines affected, M applications" and
+  show all rules that contributed to a line's transformation.
+- **New `rules_applied` fields:**
+  - `replacement_lines_affected`: distinct line count (across both files) where
+    at least one replacement rule matched.
+  - `replacement_applications`: total number of individual regex substitutions
+    applied across all lines in both files.
+  - `replace_rules_count` semantics changed: now reports the number of
+    `replace_regex` rules **configured** (not runtime effect counts). Use
+    `replacement_applications` for the runtime total.
+- **`details.normalize`:** The effective normalization settings are now included
+  in `details` so that UI consumers can check `case_insensitive` and suppress
+  highlighting of case-only differences between `raw` and `processed` in
+  samples. Always present; omitted in error reports where the engine did not
+  run.
+
+**Previous revision (v1.1 doc update, revision 8):**
 
 - **Audit samples for dropped and replaced lines (text engine, line_by_line
   mode):** Two new lists in `details`: `dropped_samples` and
@@ -1051,7 +1150,7 @@ filtering/processing fields in `details`.
   `replace_regex`, respectively. Each sample includes the original raw line,
   the processed content at the point of action, the original file line number,
   and which side (source/target) it came from. Replacement samples also
-  include the first matching pattern and replacement string. Both lists are
+  include the matching pattern and replacement string. Both lists are
   capped at `--sample-limit` per side and default to `[]`. Present only in
   `line_by_line` mode; omitted in `unordered_lines` mode. Backward
   compatible — older consumers that do not expect these fields will ignore

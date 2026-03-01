@@ -277,6 +277,8 @@ class TabularDetails(BaseModel):
 class TextRulesApplied(BaseModel):
     drop_lines_count: int = 0
     replace_rules_count: int = 0
+    replacement_lines_affected: int = 0
+    replacement_applications: int = 0
 
 
 class TextDroppedSample(BaseModel):
@@ -286,13 +288,18 @@ class TextDroppedSample(BaseModel):
     processed: str
 
 
+class TextReplacementRuleApplied(BaseModel):
+    pattern: str
+    replace: str
+    matches: int = 1
+
+
 class TextReplacementSample(BaseModel):
     side: Literal["source", "target"]
     line_number: int
     raw: str
     processed: str
-    pattern: str | None = None
-    replace: str | None = None
+    rules: list[TextReplacementRuleApplied] = Field(default_factory=list)
 
 
 class UnorderedStats(BaseModel):
@@ -315,6 +322,7 @@ class TextDetails(BaseModel):
     ignored_blank_lines_source: int = 0
     ignored_blank_lines_target: int = 0
     rules_applied: TextRulesApplied = Field(default_factory=TextRulesApplied)
+    normalize: TextNormalize | None = None
     unordered_stats: UnorderedStats | None = None
     dropped_samples: list[TextDroppedSample] = Field(default_factory=list)
     replacement_samples: list[TextReplacementSample] = Field(default_factory=list)
@@ -328,7 +336,7 @@ class ReconError(BaseModel):
 
 class ReconReport(BaseModel):
     type: Literal["tabular", "text"]
-    version: str = "1.1"
+    version: str = "1.2"
     generated_at: str
     config_hash: str
     summary: TabularSummary | TextSummary

@@ -11,7 +11,7 @@ def test_tabular_report_structure() -> None:
     report = build_report(cfg)
     data = json.loads(report.model_dump_json())
     assert data["type"] == "tabular"
-    assert data["version"] == "1.1"
+    assert data["version"] == "1.2"
     assert "generated_at" in data
     assert "config_hash" in data
     assert data["summary"]["source_rows"] == 0
@@ -163,7 +163,12 @@ def test_text_details_audit_samples_default_empty() -> None:
 
 def test_text_details_with_audit_samples() -> None:
     """TextDetails accepts and validates the new sample types."""
-    from reconify.models import TextDetails, TextDroppedSample, TextReplacementSample
+    from reconify.models import (
+        TextDetails,
+        TextDroppedSample,
+        TextReplacementRuleApplied,
+        TextReplacementSample,
+    )
 
     dropped = [
         TextDroppedSample(side="source", line_number=1, raw="# comment", processed="# comment"),
@@ -174,8 +179,7 @@ def test_text_details_with_audit_samples() -> None:
             line_number=2,
             raw="id=123",
             processed="id=X",
-            pattern=r"\d+",
-            replace="X",
+            rules=[TextReplacementRuleApplied(pattern=r"\d+", replace="X", matches=1)],
         ),
     ]
     details = TextDetails(dropped_samples=dropped, replacement_samples=replaced)
@@ -183,8 +187,10 @@ def test_text_details_with_audit_samples() -> None:
     assert details.dropped_samples[0].side == "source"
     assert details.dropped_samples[0].line_number == 1
     assert len(details.replacement_samples) == 1
-    assert details.replacement_samples[0].pattern == r"\d+"
-    assert details.replacement_samples[0].replace == "X"
+    assert len(details.replacement_samples[0].rules) == 1
+    assert details.replacement_samples[0].rules[0].pattern == r"\d+"
+    assert details.replacement_samples[0].rules[0].replace == "X"
+    assert details.replacement_samples[0].rules[0].matches == 1
 
 
 def test_config_hash_deterministic() -> None:

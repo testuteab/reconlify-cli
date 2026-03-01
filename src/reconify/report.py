@@ -128,6 +128,8 @@ def write_report(report: ReconReport, path: str) -> None:
     if isinstance(details, dict):
         if "unordered_stats" in details and details["unordered_stats"] is None:
             del details["unordered_stats"]
+        if "normalize" in details and details["normalize"] is None:
+            del details["normalize"]
         if "csv" in details and details["csv"] is None:
             del details["csv"]
         # Omit row_filters from filters_applied when not enabled

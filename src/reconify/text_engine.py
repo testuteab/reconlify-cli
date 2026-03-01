@@ -29,18 +29,18 @@ def _apply_pipeline(
     norm: Any,
     replace_rules: list[tuple[re.Pattern[str], str]],
     drop_patterns: list[re.Pattern[str]],
-) -> tuple[str | None, int, bool, str, str | None, str | None]:
+) -> tuple[str | None, int, bool, str, list[tuple[str, str, int]]]:
     """Apply the 7-step processing pipeline to a single line.
 
     Returns (processed_line_or_None, replace_count, was_dropped,
-             dropped_content, first_replace_pattern, first_replace_repl).
+             dropped_content, rules_matched).
     None for processed_line means the line should be skipped (blank or dropped).
     dropped_content is the line content at the point of drop (pre-case-fold).
-    first_replace_pattern/repl capture the first regex rule that fired.
+    rules_matched is a list of (pattern_str, replacement_str, match_count) for
+    each rule that fired at least once on this line.
     """
     replace_count = 0
-    first_replace_pattern: str | None = None
-    first_replace_repl: str | None = None
+    rules_matched: list[tuple[str, str, int]] = []
 
     # 2) trim_lines
     if norm.trim_lines:
@@ -56,27 +56,26 @@ def _apply_pipeline(
     for pattern, replacement in replace_rules:
         line, n = pattern.subn(replacement, line)
         replace_count += n
-        if n > 0 and first_replace_pattern is None:
-            first_replace_pattern = pattern.pattern
-            first_replace_repl = replacement
+        if n > 0:
+            rules_matched.append((pattern.pattern, replacement, n))
 
     # 5) ignore_blank_lines (before drop/case so blank detection uses
     #    the post-replace content, same as before)
     if norm.ignore_blank_lines and line == "":
-        return None, replace_count, False, "", first_replace_pattern, first_replace_repl
+        return None, replace_count, False, "", rules_matched
 
     # 6) drop_lines_regex (before case folding so patterns match the
     #    original casing, e.g. [HEARTBEAT] still matches when
     #    case_insensitive=true)
     for dp in drop_patterns:
         if dp.search(line):
-            return None, replace_count, True, line, first_replace_pattern, first_replace_repl
+            return None, replace_count, True, line, rules_matched
 
     # 7) case_insensitive (last transform — only reached for kept lines)
     if norm.case_insensitive:
         line = line.lower()
 
-    return line, replace_count, False, "", first_replace_pattern, first_replace_repl
+    return line, replace_count, False, "", rules_matched
 
 
 class _LineStream:
@@ -97,6 +96,7 @@ class _LineStream:
         "dropped_samples",
         "raw_lines_count",
         "replace_count",
+        "replacement_lines_affected",
         "replacement_samples",
         "total_lines",
     )
@@ -121,6 +121,7 @@ class _LineStream:
         self.dropped_samples: list[dict[str, Any]] = []
         self.raw_lines_count = 0
         self.replace_count = 0
+        self.replacement_lines_affected = 0
         self.replacement_samples: list[dict[str, Any]] = []
         self.total_lines = 0
 
@@ -130,7 +131,7 @@ class _LineStream:
         for raw_idx, raw_line in enumerate(self._raw_lines()):
             orig_line_num = raw_idx + 1  # 1-based
 
-            result, rc, dropped, dropped_content, first_pat, first_repl = _apply_pipeline(
+            result, rc, dropped, dropped_content, rules_matched = _apply_pipeline(
                 raw_line,
                 norm,
                 self._replace_rules,
@@ -139,26 +140,34 @@ class _LineStream:
             self.replace_count += rc
 
             # Capture replacement samples (line may also be dropped)
-            if rc > 0 and len(self.replacement_samples) < self._sample_limit:
-                self.replacement_samples.append({
-                    "side": self._side,
-                    "line_number": orig_line_num,
-                    "raw": raw_line,
-                    "processed": dropped_content if dropped else (result or ""),
-                    "pattern": first_pat,
-                    "replace": first_repl,
-                })
+            if rc > 0:
+                self.replacement_lines_affected += 1
+                if len(self.replacement_samples) < self._sample_limit:
+                    self.replacement_samples.append(
+                        {
+                            "side": self._side,
+                            "line_number": orig_line_num,
+                            "raw": raw_line,
+                            "processed": dropped_content if dropped else (result or ""),
+                            "rules": [
+                                {"pattern": pat, "replace": repl, "matches": n}
+                                for pat, repl, n in rules_matched
+                            ],
+                        }
+                    )
 
             if dropped:
                 self.drop_count += 1
                 # Capture dropped samples
                 if len(self.dropped_samples) < self._sample_limit:
-                    self.dropped_samples.append({
-                        "side": self._side,
-                        "line_number": orig_line_num,
-                        "raw": raw_line,
-                        "processed": dropped_content,
-                    })
+                    self.dropped_samples.append(
+                        {
+                            "side": self._side,
+                            "line_number": orig_line_num,
+                            "raw": raw_line,
+                            "processed": dropped_content,
+                        }
+                    )
             elif result is None:
                 self.blank_lines_ignored += 1
             if result is None:
@@ -459,7 +468,9 @@ def compare_text(
                 "ignored_blank_lines_target": 0,
                 "rules_applied": {
                     "drop_lines_count": 0,
-                    "replace_rules_count": 0,
+                    "replace_rules_count": len(config.replace_regex),
+                    "replacement_lines_affected": 0,
+                    "replacement_applications": 0,
                 },
             },
             "samples": [],
@@ -472,6 +483,9 @@ def compare_text(
 
     total_drop = src_stream.drop_count + tgt_stream.drop_count
     total_replace = src_stream.replace_count + tgt_stream.replace_count
+    total_lines_affected = (
+        src_stream.replacement_lines_affected + tgt_stream.replacement_lines_affected
+    )
 
     elapsed = time.monotonic() - start
     exit_code = 0 if different == 0 else 1
@@ -484,8 +498,11 @@ def compare_text(
         "ignored_blank_lines_target": tgt_stream.blank_lines_ignored,
         "rules_applied": {
             "drop_lines_count": total_drop,
-            "replace_rules_count": total_replace,
+            "replace_rules_count": len(config.replace_regex),
+            "replacement_lines_affected": total_lines_affected,
+            "replacement_applications": total_replace,
         },
+        "normalize": config.normalize.model_dump(),
     }
 
     report_dict: dict[str, Any] = {
@@ -500,9 +517,7 @@ def compare_text(
 
     if config.mode == TextMode.line_by_line:
         report_dict["samples"] = samples
-        details["dropped_samples"] = (
-            src_stream.dropped_samples + tgt_stream.dropped_samples
-        )
+        details["dropped_samples"] = src_stream.dropped_samples + tgt_stream.dropped_samples
         details["replacement_samples"] = (
             src_stream.replacement_samples + tgt_stream.replacement_samples
         )

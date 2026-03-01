@@ -35,7 +35,7 @@ def test_run_tabular_min(tmp_path) -> None:
     assert report_path.exists()
     data = json.loads(report_path.read_text())
     assert data["type"] == "tabular"
-    assert data["version"] == "1.1"
+    assert data["version"] == "1.2"
     assert "config_hash" in data
     assert data["summary"]["source_rows"] == 2
 

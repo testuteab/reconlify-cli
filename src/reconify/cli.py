@@ -136,6 +136,8 @@ def _run_text(
         "ignored_blank_lines_target": result["details"]["ignored_blank_lines_target"],
         "rules_applied": type(report.details.rules_applied)(**result["details"]["rules_applied"]),
     }
+    if result["details"].get("normalize") is not None:
+        details_kwargs["normalize"] = result["details"]["normalize"]
     if result["details"].get("unordered_stats"):
         details_kwargs["unordered_stats"] = UnorderedStats(**result["details"]["unordered_stats"])
     if "dropped_samples" in result["details"]:

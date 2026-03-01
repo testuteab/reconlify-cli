@@ -84,7 +84,7 @@ class TestLineByLineE2E:
         ec, r = e2e_runner("text_line_by_line_identical")
         assert ec == 0
         _assert_text_base(r)
-        assert r["version"] == "1.1"
+        assert r["version"] == "1.2"
         assert r["summary"]["different_lines"] == 0
         assert r["summary"]["total_lines_source"] == 3
         assert r["summary"]["total_lines_target"] == 3

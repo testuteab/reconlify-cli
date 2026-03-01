@@ -597,8 +597,13 @@ def test_replace_regex_count(tmp_path):
     report, exit_code = compare_text(cfg)
 
     assert exit_code == 0
+    ra = report["details"]["rules_applied"]
+    # replace_rules_count = number of configured rules
+    assert ra["replace_rules_count"] == 1
     # 3 replacements in source, 0 in target (already "ID")
-    assert report["details"]["rules_applied"]["replace_rules_count"] == 3
+    assert ra["replacement_applications"] == 3
+    # 2 lines affected in source (both had replacements), 0 in target
+    assert ra["replacement_lines_affected"] == 2
 
 
 def test_line_by_line_raw_and_processed_fields(tmp_path):
@@ -728,7 +733,9 @@ def test_replace_regex_with_case_insensitive(tmp_path):
     assert exit_code == 0, f"Expected exit 0. Report: {report}"
     assert report["summary"]["different_lines"] == 0
     # Replacement should have fired on both lines
-    assert report["details"]["rules_applied"]["replace_rules_count"] == 2
+    assert report["details"]["rules_applied"]["replace_rules_count"] == 1
+    assert report["details"]["rules_applied"]["replacement_applications"] == 2
+    assert report["details"]["rules_applied"]["replacement_lines_affected"] == 2
 
 
 def test_raw_preserves_casing_processed_lowercased(tmp_path):
@@ -771,16 +778,10 @@ def test_drop_lines_regex_with_case_insensitive(tmp_path):
     '[heartbeat]' and the line would leak through.
     """
     source = tmp_path / "source.txt"
-    source.write_text(
-        "2025-02-10T06:00:05.000Z [HEARTBEAT] rid=abc status=alive\n"
-        "data line one\n"
-    )
+    source.write_text("2025-02-10T06:00:05.000Z [HEARTBEAT] rid=abc status=alive\ndata line one\n")
 
     target = tmp_path / "target.txt"
-    target.write_text(
-        "2025-02-10T06:00:07.000Z [HEARTBEAT] rid=xyz status=alive\n"
-        "data line one\n"
-    )
+    target.write_text("2025-02-10T06:00:07.000Z [HEARTBEAT] rid=xyz status=alive\ndata line one\n")
 
     cfg = TextConfig(
         type="text",
@@ -839,7 +840,7 @@ def test_cli_text_run(tmp_path):
     assert report_path.exists()
     data = json.loads(report_path.read_text())
     assert data["type"] == "text"
-    assert data["version"] == "1.1"
+    assert data["version"] == "1.2"
     assert data["summary"]["different_lines"] == 0
     assert data["summary"]["total_lines_source"] == 2
     # No error field in successful reports
@@ -1045,7 +1046,7 @@ def test_dropped_samples_populated(tmp_path):
 
 
 def test_replacement_samples_populated(tmp_path):
-    """replace_regex produces replacement_samples with pattern/replace populated."""
+    """replace_regex produces replacement_samples with rules list populated."""
     source = tmp_path / "source.txt"
     source.write_text("id=123 data\nid=456 data\n")
     target = tmp_path / "target.txt"
@@ -1067,8 +1068,10 @@ def test_replacement_samples_populated(tmp_path):
     assert rs[0]["line_number"] == 1
     assert rs[0]["raw"] == "id=123 data"
     assert rs[0]["processed"] == "id=X data"
-    assert rs[0]["pattern"] == r"id=\d+"
-    assert rs[0]["replace"] == "id=X"
+    assert len(rs[0]["rules"]) == 1
+    assert rs[0]["rules"][0]["pattern"] == r"id=\d+"
+    assert rs[0]["rules"][0]["replace"] == "id=X"
+    assert rs[0]["rules"][0]["matches"] == 1
 
 
 def test_audit_samples_capped_by_sample_limit(tmp_path):
@@ -1086,7 +1089,7 @@ def test_audit_samples_capped_by_sample_limit(tmp_path):
         drop_lines_regex=["^#"],
     )
 
-    report, exit_code = compare_text(cfg, sample_limit=5)
+    report, _exit_code = compare_text(cfg, sample_limit=5)
 
     ds = report["details"]["dropped_samples"]
     assert len(ds) == 5
@@ -1144,8 +1147,9 @@ def test_replacement_samples_with_case_insensitive(tmp_path):
     assert rs[0]["raw"] == "Hello 2024-01-01 World"
     # For kept lines, processed is the final comparison value (post-case-fold)
     assert rs[0]["processed"] == "hello date world"
-    assert rs[0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
-    assert rs[0]["replace"] == "DATE"
+    assert len(rs[0]["rules"]) == 1
+    assert rs[0]["rules"][0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+    assert rs[0]["rules"][0]["replace"] == "DATE"
 
 
 def test_audit_samples_empty_when_no_rules(tmp_path):
@@ -1161,7 +1165,7 @@ def test_audit_samples_empty_when_no_rules(tmp_path):
         target=str(target),
     )
 
-    report, exit_code = compare_text(cfg)
+    report, _exit_code = compare_text(cfg)
 
     assert report["details"]["dropped_samples"] == []
     assert report["details"]["replacement_samples"] == []
@@ -1182,7 +1186,7 @@ def test_audit_samples_not_in_unordered_mode(tmp_path):
         drop_lines_regex=["^#"],
     )
 
-    report, exit_code = compare_text(cfg)
+    report, _exit_code = compare_text(cfg)
 
     assert "dropped_samples" not in report["details"]
     assert "replacement_samples" not in report["details"]
@@ -1219,8 +1223,118 @@ def test_dropped_and_replaced_same_line(tmp_path):
     assert rs[0]["line_number"] == 1
     assert rs[0]["raw"] == "# comment 2024-01-15"
     assert rs[0]["processed"] == "# comment DATE"  # dropped_content for dropped lines
-    assert rs[0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
-    assert rs[0]["replace"] == "DATE"
+    assert len(rs[0]["rules"]) == 1
+    assert rs[0]["rules"][0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+    assert rs[0]["rules"][0]["replace"] == "DATE"
+
+
+def test_multi_rule_replacement_single_line(tmp_path):
+    """A line matching 2 replacement rules produces 1 sample with 2 rules entries."""
+    source = tmp_path / "source.txt"
+    source.write_text("id=123 date=2024-01-15\n")
+    target = tmp_path / "target.txt"
+    target.write_text("id=X date=DATE\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        replace_regex=[
+            {"pattern": r"id=\d+", "replace": "id=X"},
+            {"pattern": r"\d{4}-\d{2}-\d{2}", "replace": "DATE"},
+        ],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    ra = report["details"]["rules_applied"]
+    assert ra["replace_rules_count"] == 2
+    assert ra["replacement_lines_affected"] == 1
+    assert ra["replacement_applications"] == 2
+
+    rs = report["details"]["replacement_samples"]
+    assert len(rs) == 1
+    assert rs[0]["raw"] == "id=123 date=2024-01-15"
+    assert rs[0]["processed"] == "id=X date=DATE"
+    assert len(rs[0]["rules"]) == 2
+    assert rs[0]["rules"][0]["pattern"] == r"id=\d+"
+    assert rs[0]["rules"][0]["replace"] == "id=X"
+    assert rs[0]["rules"][0]["matches"] == 1
+    assert rs[0]["rules"][1]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+    assert rs[0]["rules"][1]["replace"] == "DATE"
+    assert rs[0]["rules"][1]["matches"] == 1
+
+
+def test_multi_match_single_rule(tmp_path):
+    """A rule matching twice on one line reports matches=2."""
+    source = tmp_path / "source.txt"
+    source.write_text("id=111 id=222\n")
+    target = tmp_path / "target.txt"
+    target.write_text("id=X id=X\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        replace_regex=[{"pattern": r"\d+", "replace": "X"}],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    ra = report["details"]["rules_applied"]
+    assert ra["replacement_lines_affected"] == 1
+    assert ra["replacement_applications"] == 2
+
+    rs = report["details"]["replacement_samples"]
+    assert len(rs) == 1
+    assert len(rs[0]["rules"]) == 1
+    assert rs[0]["rules"][0]["matches"] == 2
+
+
+def test_normalize_in_details(tmp_path):
+    """details.normalize should reflect the config normalize settings."""
+    source = tmp_path / "source.txt"
+    source.write_text("Hello World\n")
+    target = tmp_path / "target.txt"
+    target.write_text("hello world\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True, "trim_lines": True},
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    norm = report["details"]["normalize"]
+    assert norm["case_insensitive"] is True
+    assert norm["trim_lines"] is True
+    assert norm["collapse_whitespace"] is False
+    assert norm["normalize_newlines"] is True
+
+
+def test_normalize_in_cli_report(tmp_path):
+    """CLI report JSON should include details.normalize for text reports."""
+    source = tmp_path / "source.txt"
+    source.write_text("Hello\n")
+    target = tmp_path / "target.txt"
+    target.write_text("hello\n")
+
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        f"type: text\nsource: {source}\ntarget: {target}\nnormalize:\n  case_insensitive: true\n"
+    )
+    report_path = tmp_path / "report.json"
+
+    result = runner.invoke(app, ["run", str(cfg_file), "--out", str(report_path)])
+
+    assert result.exit_code == 0
+    data = json.loads(report_path.read_text())
+    assert data["details"]["normalize"]["case_insensitive"] is True
 
 
 def test_performance_line_by_line_large(tmp_path):
