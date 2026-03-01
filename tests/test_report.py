@@ -152,6 +152,41 @@ def test_write_report_text_omits_csv(tmp_path) -> None:
     assert "csv" not in data["details"]
 
 
+def test_text_details_audit_samples_default_empty() -> None:
+    """New dropped_samples and replacement_samples fields default to []."""
+    from reconify.models import TextDetails
+
+    details = TextDetails()
+    assert details.dropped_samples == []
+    assert details.replacement_samples == []
+
+
+def test_text_details_with_audit_samples() -> None:
+    """TextDetails accepts and validates the new sample types."""
+    from reconify.models import TextDetails, TextDroppedSample, TextReplacementSample
+
+    dropped = [
+        TextDroppedSample(side="source", line_number=1, raw="# comment", processed="# comment"),
+    ]
+    replaced = [
+        TextReplacementSample(
+            side="target",
+            line_number=2,
+            raw="id=123",
+            processed="id=X",
+            pattern=r"\d+",
+            replace="X",
+        ),
+    ]
+    details = TextDetails(dropped_samples=dropped, replacement_samples=replaced)
+    assert len(details.dropped_samples) == 1
+    assert details.dropped_samples[0].side == "source"
+    assert details.dropped_samples[0].line_number == 1
+    assert len(details.replacement_samples) == 1
+    assert details.replacement_samples[0].pattern == r"\d+"
+    assert details.replacement_samples[0].replace == "X"
+
+
 def test_config_hash_deterministic() -> None:
     cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
     assert config_hash(cfg) == config_hash(cfg)

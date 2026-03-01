@@ -1011,6 +1011,218 @@ def test_performance_unordered_large_mismatches(tmp_path):
         assert sample["target_count"] == 0
 
 
+# ---------------------------------------------------------------------------
+# Audit sample tests (dropped_samples / replacement_samples)
+# ---------------------------------------------------------------------------
+
+
+def test_dropped_samples_populated(tmp_path):
+    """drop_lines_regex produces non-empty dropped_samples with correct fields."""
+    source = tmp_path / "source.txt"
+    source.write_text("# comment\ndata1\n# another\ndata2\n")
+    target = tmp_path / "target.txt"
+    target.write_text("data1\ndata2\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        drop_lines_regex=["^#"],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 2
+    assert ds[0]["side"] == "source"
+    assert ds[0]["line_number"] == 1
+    assert ds[0]["raw"] == "# comment"
+    assert ds[0]["processed"] == "# comment"
+    assert ds[1]["side"] == "source"
+    assert ds[1]["line_number"] == 3
+    assert ds[1]["raw"] == "# another"
+
+
+def test_replacement_samples_populated(tmp_path):
+    """replace_regex produces replacement_samples with pattern/replace populated."""
+    source = tmp_path / "source.txt"
+    source.write_text("id=123 data\nid=456 data\n")
+    target = tmp_path / "target.txt"
+    target.write_text("id=X data\nid=X data\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        replace_regex=[{"pattern": r"id=\d+", "replace": "id=X"}],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    rs = report["details"]["replacement_samples"]
+    assert len(rs) == 2
+    assert rs[0]["side"] == "source"
+    assert rs[0]["line_number"] == 1
+    assert rs[0]["raw"] == "id=123 data"
+    assert rs[0]["processed"] == "id=X data"
+    assert rs[0]["pattern"] == r"id=\d+"
+    assert rs[0]["replace"] == "id=X"
+
+
+def test_audit_samples_capped_by_sample_limit(tmp_path):
+    """20 dropped lines, sample_limit=5 -> only 5 dropped_samples."""
+    source = tmp_path / "source.txt"
+    lines = [f"# drop {i}" for i in range(20)] + ["data\n"]
+    source.write_text("\n".join(lines))
+    target = tmp_path / "target.txt"
+    target.write_text("data\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        drop_lines_regex=["^#"],
+    )
+
+    report, exit_code = compare_text(cfg, sample_limit=5)
+
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 5
+    # First 5 dropped lines from source
+    for i, s in enumerate(ds):
+        assert s["side"] == "source"
+        assert s["line_number"] == i + 1
+
+
+def test_dropped_samples_with_case_insensitive(tmp_path):
+    """processed in dropped_samples shows pre-case-fold content."""
+    source = tmp_path / "source.txt"
+    source.write_text("[HEARTBEAT] status=alive\nData Line\n")
+    target = tmp_path / "target.txt"
+    target.write_text("data line\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True},
+        drop_lines_regex=[r"\[HEARTBEAT\]"],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    ds = report["details"]["dropped_samples"]
+    assert len(ds) == 1
+    # processed is pre-case-fold (the value at the point of drop)
+    assert ds[0]["processed"] == "[HEARTBEAT] status=alive"
+    assert ds[0]["raw"] == "[HEARTBEAT] status=alive"
+
+
+def test_replacement_samples_with_case_insensitive(tmp_path):
+    """processed in replacement_samples shows post-case-fold for kept lines."""
+    source = tmp_path / "source.txt"
+    source.write_text("Hello 2024-01-01 World\n")
+    target = tmp_path / "target.txt"
+    target.write_text("hello DATE world\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        normalize={"case_insensitive": True},
+        replace_regex=[{"pattern": r"\d{4}-\d{2}-\d{2}", "replace": "DATE"}],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    rs = report["details"]["replacement_samples"]
+    assert len(rs) == 1
+    assert rs[0]["raw"] == "Hello 2024-01-01 World"
+    # For kept lines, processed is the final comparison value (post-case-fold)
+    assert rs[0]["processed"] == "hello date world"
+    assert rs[0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+    assert rs[0]["replace"] == "DATE"
+
+
+def test_audit_samples_empty_when_no_rules(tmp_path):
+    """No rules configured -> both audit sample lists are empty."""
+    source = tmp_path / "source.txt"
+    source.write_text("aaa\nbbb\n")
+    target = tmp_path / "target.txt"
+    target.write_text("aaa\nccc\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert report["details"]["dropped_samples"] == []
+    assert report["details"]["replacement_samples"] == []
+
+
+def test_audit_samples_not_in_unordered_mode(tmp_path):
+    """Unordered mode -> dropped_samples and replacement_samples keys absent."""
+    source = tmp_path / "source.txt"
+    source.write_text("# comment\nalpha\n")
+    target = tmp_path / "target.txt"
+    target.write_text("alpha\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+        drop_lines_regex=["^#"],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert "dropped_samples" not in report["details"]
+    assert "replacement_samples" not in report["details"]
+
+
+def test_dropped_and_replaced_same_line(tmp_path):
+    """A line with both replace+drop appears in both audit sample lists."""
+    source = tmp_path / "source.txt"
+    # Line has a date (triggers replace) AND starts with # (triggers drop)
+    source.write_text("# comment 2024-01-15\ndata\n")
+    target = tmp_path / "target.txt"
+    target.write_text("data\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        drop_lines_regex=["^#"],
+        replace_regex=[{"pattern": r"\d{4}-\d{2}-\d{2}", "replace": "DATE"}],
+    )
+
+    report, exit_code = compare_text(cfg)
+
+    assert exit_code == 0
+    ds = report["details"]["dropped_samples"]
+    rs = report["details"]["replacement_samples"]
+    # The line appears in both lists
+    assert len(ds) == 1
+    assert ds[0]["line_number"] == 1
+    assert ds[0]["raw"] == "# comment 2024-01-15"
+    assert ds[0]["processed"] == "# comment DATE"  # post-replace, pre-drop
+
+    assert len(rs) == 1
+    assert rs[0]["line_number"] == 1
+    assert rs[0]["raw"] == "# comment 2024-01-15"
+    assert rs[0]["processed"] == "# comment DATE"  # dropped_content for dropped lines
+    assert rs[0]["pattern"] == r"\d{4}-\d{2}-\d{2}"
+    assert rs[0]["replace"] == "DATE"
+
+
 def test_performance_line_by_line_large(tmp_path):
     """5000 different lines with sample_limit=10: only 10 samples returned."""
     source = tmp_path / "source.txt"

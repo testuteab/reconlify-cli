@@ -138,6 +138,10 @@ def _run_text(
     }
     if result["details"].get("unordered_stats"):
         details_kwargs["unordered_stats"] = UnorderedStats(**result["details"]["unordered_stats"])
+    if "dropped_samples" in result["details"]:
+        details_kwargs["dropped_samples"] = result["details"]["dropped_samples"]
+    if "replacement_samples" in result["details"]:
+        details_kwargs["replacement_samples"] = result["details"]["replacement_samples"]
     report.details = type(report.details)(**details_kwargs)
 
     report.samples = result["samples"]

@@ -529,7 +529,9 @@ lines, the raw file has more lines than reported here. Check
     "drop_lines_count": int,
     "replace_rules_count": int
   },
-  "unordered_stats": { ... }
+  "unordered_stats": { ... },
+  "dropped_samples": [ ... ],
+  "replacement_samples": [ ... ]
 }
 ```
 
@@ -562,6 +564,8 @@ lines removed by `drop_lines_regex` (step 6); those are counted separately in
 `rules_applied.drop_lines_count`.
 | `rules_applied`              | always   | Counts of rule application effects. See below. |
 | `unordered_stats`            | only in `unordered_lines` mode | Aggregate breakdown of unordered mismatches. Omitted in `line_by_line` mode. Always present when mode is `unordered_lines`, regardless of whether differences exist. |
+| `dropped_samples`            | only in `line_by_line` mode | List of audit samples for lines removed by `drop_lines_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
+| `replacement_samples`        | only in `line_by_line` mode | List of audit samples for lines modified by `replace_regex`. Capped at `--sample-limit` per side. Omitted in `unordered_lines` mode. See below. |
 
 **Invariant:**
 
@@ -616,6 +620,73 @@ differences exist. Omitted entirely in `line_by_line` mode.
 **Audit note:** `distinct_mismatched_lines` tells you how many unique line
 contents are involved in the mismatch. A high `different_lines` with a low
 `distinct_mismatched_lines` means a few lines are repeated many times.
+
+### details.dropped_samples (line_by_line mode only)
+
+List of concrete line-level evidence of lines removed by `drop_lines_regex`.
+Present only in `line_by_line` mode; omitted in `unordered_lines` mode.
+Defaults to `[]` when no lines were dropped.
+
+```json
+[
+  {
+    "side": "source" | "target",
+    "line_number": int,
+    "raw": string,
+    "processed": string
+  }
+]
+```
+
+| Field         | Description |
+|---------------|-------------|
+| `side`        | Which file the dropped line came from: `"source"` or `"target"`. |
+| `line_number` | **Original raw file line number** (1-based) of the dropped line. |
+| `raw`         | The original raw line content before any pipeline processing. |
+| `processed`   | The line content at the point of drop — after trim, collapse, and replace, but **before** case folding. Shows exactly what the drop regex matched against. |
+
+**Truncation:** Capped at `--sample-limit` entries per side (source samples
+listed first, then target). When more lines are dropped than the limit, only
+the first N encountered per side are stored.
+
+**Audit note:** A line can appear in both `dropped_samples` and
+`replacement_samples` if a replace rule fired on the line and then a drop
+pattern matched. This is correct and useful — it shows the full
+transformation chain.
+
+### details.replacement_samples (line_by_line mode only)
+
+List of concrete line-level evidence of lines modified by `replace_regex`.
+Present only in `line_by_line` mode; omitted in `unordered_lines` mode.
+Defaults to `[]` when no replacements fired.
+
+```json
+[
+  {
+    "side": "source" | "target",
+    "line_number": int,
+    "raw": string,
+    "processed": string,
+    "pattern": string | null,
+    "replace": string | null
+  }
+]
+```
+
+| Field         | Description |
+|---------------|-------------|
+| `side`        | Which file the replaced line came from: `"source"` or `"target"`. |
+| `line_number` | **Original raw file line number** (1-based) of the replaced line. |
+| `raw`         | The original raw line content before any pipeline processing. |
+| `processed`   | For kept lines: the final comparison value (after all pipeline steps including case folding). For dropped lines: the line content at the point of drop (pre-case-fold). |
+| `pattern`     | The regex pattern string of the **first** replace rule that fired on this line. `null` if unavailable. |
+| `replace`     | The replacement string of the **first** replace rule that fired on this line. `null` if unavailable. |
+
+**Truncation:** Same as `dropped_samples` — capped per side at `--sample-limit`.
+
+**Audit note:** `pattern` and `replace` show the first rule that matched.
+If multiple replace rules fire on the same line, only the first is recorded.
+Compare `raw` to `processed` to see the cumulative effect of all rules.
 
 ## samples (line_by_line mode)
 
@@ -737,7 +808,9 @@ but counts differ, some occurrences of this line were added or removed.
     "rules_applied": {
       "drop_lines_count": 0,
       "replace_rules_count": 0
-    }
+    },
+    "dropped_samples": [],
+    "replacement_samples": []
   },
   "samples": [
     {
@@ -761,6 +834,67 @@ but counts differ, some occurrences of this line were added or removed.
       "target": ""
     }
   ]
+}
+```
+
+## Full text example (line_by_line, with drop and replace rules)
+
+```json
+{
+  "type": "text",
+  "version": "1.1",
+  "generated_at": "2026-01-15T12:00:00+00:00",
+  "config_hash": "ccc333...",
+  "summary": {
+    "total_lines_source": 2,
+    "total_lines_target": 2,
+    "different_lines": 0,
+    "comparison_time_seconds": 0.0003
+  },
+  "details": {
+    "mode": "line_by_line",
+    "read_lines_source": 3,
+    "read_lines_target": 3,
+    "ignored_blank_lines_source": 0,
+    "ignored_blank_lines_target": 0,
+    "rules_applied": {
+      "drop_lines_count": 2,
+      "replace_rules_count": 4
+    },
+    "dropped_samples": [
+      {
+        "side": "source",
+        "line_number": 1,
+        "raw": "# header comment",
+        "processed": "# header comment"
+      },
+      {
+        "side": "target",
+        "line_number": 1,
+        "raw": "# target comment",
+        "processed": "# target comment"
+      }
+    ],
+    "replacement_samples": [
+      {
+        "side": "source",
+        "line_number": 2,
+        "raw": "alpha 2024-01-15 value",
+        "processed": "alpha DATE value",
+        "pattern": "\\d{4}-\\d{2}-\\d{2}",
+        "replace": "DATE"
+      },
+      {
+        "side": "target",
+        "line_number": 2,
+        "raw": "alpha 2025-12-01 value",
+        "processed": "alpha DATE value",
+        "pattern": "\\d{4}-\\d{2}-\\d{2}",
+        "replace": "DATE"
+      }
+    ]
+  },
+  "samples": []
 }
 ```
 
@@ -870,7 +1004,7 @@ filtering/processing fields in `details`.
 | Field / Section             | Tabular          | Text                |
 |-----------------------------|------------------|---------------------|
 | `summary` fields            | source_rows, target_rows, missing_in_target, missing_in_source, rows_with_mismatches, mismatched_cells | total_lines_source, total_lines_target, different_lines |
-| `details` fields            | format, keys, compared_columns, read_rows_source/target, filters_applied, column_stats | mode, read_lines_source/target, ignored_blank_lines_source/target, rules_applied, unordered_stats |
+| `details` fields            | format, keys, compared_columns, read_rows_source/target, filters_applied, column_stats | mode, read_lines_source/target, ignored_blank_lines_source/target, rules_applied, unordered_stats, dropped_samples, replacement_samples |
 | `samples` type              | dict (4 category lists) | list (flat) |
 | `samples_agg`               | never present    | unordered_lines mode only |
 
@@ -881,6 +1015,8 @@ filtering/processing fields in `details`.
 | `samples`              | list of diffs    | always `[]`           |
 | `samples_agg`          | absent           | present when diffs > 0 |
 | `unordered_stats`      | absent           | always present        |
+| `dropped_samples`      | always present (may be `[]`) | absent     |
+| `replacement_samples`  | always present (may be `[]`) | absent     |
 | `processed_line_number_*` | with `--debug-report` | N/A            |
 
 ## CLI-flag-dependent fields (text engine)
@@ -906,7 +1042,22 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.1 doc update, revision 7):**
+**This revision (v1.1 doc update, revision 8):**
+
+- **Audit samples for dropped and replaced lines (text engine, line_by_line
+  mode):** Two new lists in `details`: `dropped_samples` and
+  `replacement_samples`. These provide concrete line-level evidence of which
+  lines were removed by `drop_lines_regex` and which were modified by
+  `replace_regex`, respectively. Each sample includes the original raw line,
+  the processed content at the point of action, the original file line number,
+  and which side (source/target) it came from. Replacement samples also
+  include the first matching pattern and replacement string. Both lists are
+  capped at `--sample-limit` per side and default to `[]`. Present only in
+  `line_by_line` mode; omitted in `unordered_lines` mode. Backward
+  compatible — older consumers that do not expect these fields will ignore
+  them.
+
+**Previous revision (v1.1 doc update, revision 7):**
 
 - **`details.csv` in tabular reports:** Tabular reports now include an
   optional `details.csv` object containing the effective CSV parsing settings

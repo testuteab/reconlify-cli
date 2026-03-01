@@ -279,6 +279,22 @@ class TextRulesApplied(BaseModel):
     replace_rules_count: int = 0
 
 
+class TextDroppedSample(BaseModel):
+    side: Literal["source", "target"]
+    line_number: int
+    raw: str
+    processed: str
+
+
+class TextReplacementSample(BaseModel):
+    side: Literal["source", "target"]
+    line_number: int
+    raw: str
+    processed: str
+    pattern: str | None = None
+    replace: str | None = None
+
+
 class UnorderedStats(BaseModel):
     source_only_lines: int = 0
     target_only_lines: int = 0
@@ -300,6 +316,8 @@ class TextDetails(BaseModel):
     ignored_blank_lines_target: int = 0
     rules_applied: TextRulesApplied = Field(default_factory=TextRulesApplied)
     unordered_stats: UnorderedStats | None = None
+    dropped_samples: list[TextDroppedSample] = Field(default_factory=list)
+    replacement_samples: list[TextReplacementSample] = Field(default_factory=list)
 
 
 class ReconError(BaseModel):
