@@ -30,7 +30,10 @@ ignore = ["B008"]  # Allow function calls in argument defaults (Typer pattern)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["e2e: End-to-end tests (invoke CLI as subprocess)"]
+markers = [
+    "e2e: End-to-end tests (invoke CLI as subprocess)",
+    "perf: Performance tests (large generated fixtures; opt-in)",
+]
 
 [build-system]
 requires = ["poetry-core"]
