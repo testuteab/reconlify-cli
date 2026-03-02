@@ -24,6 +24,7 @@ Exit codes:
   "details": { ... },
   "samples": [ ... ] | { ... },
   "samples_agg": [ ... ],
+  "warnings": [ ... ],
   "error": { ... }
 }
 ```
@@ -38,6 +39,7 @@ Exit codes:
 | `details`      | object            | always    | Metadata about what was compared and how. Structure differs by `type`. Contains defaults when `error` is present. |
 | `samples`      | list or dict      | always    | Sample diff entries. Type-dependent: list for text, dict for tabular. Empty when `error` is present. |
 | `samples_agg`  | list              | optional  | **Text only, unordered_lines mode only.** Aggregated mismatch samples. Omitted when absent (line_by_line mode, error reports, or no mismatches in unordered mode). |
+| `warnings`     | list of strings   | optional  | Non-fatal advisory messages. Omitted when empty. Currently emitted when unlimited `--max-line-numbers` produces line number arrays exceeding 5000 entries. |
 | `error`        | object            | optional  | Present only on exit code 2. Omitted entirely when there is no error. |
 
 ---
@@ -801,9 +803,9 @@ are zero differences.
 | `line`                           | always   | The processed line content (after normalization/replacement). |
 | `source_count`                   | always   | Number of times this line appears in the processed source. |
 | `target_count`                   | always   | Number of times this line appears in the processed target. |
-| `source_line_numbers`            | only with `--include-line-numbers` (default: on) | List of **original raw file line numbers** (1-based) where this processed line content occurred in source. Capped to `--max-line-numbers` entries (default: 10). Empty list `[]` when `source_count` is 0. |
+| `source_line_numbers`            | only with `--include-line-numbers` (default: on) | List of **original raw file line numbers** (1-based) where this processed line content occurred in source. By default all line numbers are stored (unlimited). When `--max-line-numbers N` is set (N > 0), capped to N entries. Empty list `[]` when `source_count` is 0. |
 | `target_line_numbers`            | only with `--include-line-numbers` | Same as above, for target. |
-| `source_line_numbers_truncated`  | only with `--include-line-numbers` | `true` when the total occurrences in source exceed the stored line numbers (i.e. some line numbers were omitted due to the `--max-line-numbers` cap). `false` otherwise. |
+| `source_line_numbers_truncated`  | only with `--include-line-numbers` | `true` when the total occurrences in source exceed the stored line numbers (i.e. some line numbers were omitted due to a `--max-line-numbers` cap). Always `false` when unlimited (default). |
 | `target_line_numbers_truncated`  | only with `--include-line-numbers` | Same as above, for target. |
 
 When `--no-include-line-numbers` is passed, all four line-number fields are
@@ -1090,7 +1092,7 @@ filtering/processing fields in `details`.
 |--------------------------------|------------------|
 | `--include-line-numbers` (default) | Includes `source_line_numbers`, `target_line_numbers`, and truncated flags in `samples_agg`. |
 | `--no-include-line-numbers`    | Omits all four line-number fields from `samples_agg` entries. |
-| `--max-line-numbers N`         | Caps stored line numbers per side per distinct line to N. Sets truncated flag when exceeded. |
+| `--max-line-numbers N`         | Caps stored line numbers per side per distinct line to N (0 = unlimited, the default). Sets truncated flag when exceeded. |
 | `--debug-report`               | Adds `processed_line_number_source/target` to line_by_line samples. |
 
 ## Config-dependent fields (tabular engine)

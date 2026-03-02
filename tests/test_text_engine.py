@@ -256,6 +256,108 @@ def test_unordered_no_line_numbers(tmp_path):
     assert "target_line_numbers_truncated" not in agg[0]
 
 
+def test_unordered_unlimited_line_numbers(tmp_path):
+    """max_line_numbers=0 stores all line numbers without truncation."""
+    source = tmp_path / "source.txt"
+    source.write_text("\n".join(["x"] * 50) + "\n")
+    target = tmp_path / "target.txt"
+    target.write_text("")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, exit_code = compare_text(cfg, max_line_numbers=0)
+
+    assert exit_code == 1
+    agg = report["samples_agg"]
+    assert len(agg) == 1
+    assert agg[0]["source_count"] == 50
+    assert agg[0]["source_line_numbers"] == list(range(1, 51))
+    assert agg[0]["source_line_numbers_truncated"] is False
+    assert agg[0]["target_line_numbers"] == []
+    assert agg[0]["target_line_numbers_truncated"] is False
+    assert "warnings" not in report
+
+
+def test_unordered_capped_line_numbers_counts_still_correct(tmp_path):
+    """Capped mode stores at most N line numbers but counts reflect all occurrences."""
+    source = tmp_path / "source.txt"
+    source.write_text("\n".join(["x"] * 30) + "\n")
+    target = tmp_path / "target.txt"
+    target.write_text("\n".join(["x"] * 5) + "\n")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, exit_code = compare_text(cfg, max_line_numbers=3)
+
+    assert exit_code == 1
+    agg = report["samples_agg"]
+    assert len(agg) == 1
+    assert agg[0]["source_count"] == 30
+    assert agg[0]["target_count"] == 5
+    assert agg[0]["source_line_numbers"] == [1, 2, 3]
+    assert agg[0]["source_line_numbers_truncated"] is True
+    assert agg[0]["target_line_numbers"] == [1, 2, 3]
+    assert agg[0]["target_line_numbers_truncated"] is True
+
+
+def test_unordered_large_line_numbers_warning(tmp_path):
+    """Warning is emitted when unlimited line_numbers produces arrays > 5000."""
+    n = 5500
+    source = tmp_path / "source.txt"
+    source.write_text("\n".join(["x"] * n) + "\n")
+    target = tmp_path / "target.txt"
+    target.write_text("")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, exit_code = compare_text(cfg, max_line_numbers=0)
+
+    assert exit_code == 1
+    agg = report["samples_agg"]
+    assert agg[0]["source_count"] == n
+    assert len(agg[0]["source_line_numbers"]) == n
+    assert "warnings" in report
+    assert len(report["warnings"]) == 1
+    assert "5000" in report["warnings"][0]
+    assert "--max-line-numbers" in report["warnings"][0]
+
+
+def test_unordered_no_warning_when_capped(tmp_path):
+    """No warning when max_line_numbers is explicitly set (even with many lines)."""
+    n = 6000
+    source = tmp_path / "source.txt"
+    source.write_text("\n".join(["x"] * n) + "\n")
+    target = tmp_path / "target.txt"
+    target.write_text("")
+
+    cfg = TextConfig(
+        type="text",
+        source=str(source),
+        target=str(target),
+        mode="unordered_lines",
+    )
+
+    report, exit_code = compare_text(cfg, max_line_numbers=100)
+
+    assert exit_code == 1
+    assert "warnings" not in report
+
+
 # ---------------------------------------------------------------------------
 # 2) line_by_line detects differences and produces samples
 # ---------------------------------------------------------------------------

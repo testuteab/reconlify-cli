@@ -38,9 +38,9 @@ def run(
         help="Include original file line numbers in report samples.",
     ),
     max_line_numbers: int = typer.Option(
-        10,
+        0,
         "--max-line-numbers",
-        help="Maximum line numbers stored per distinct line in unordered mode.",
+        help="Maximum line numbers stored per distinct line in unordered mode. 0 = unlimited.",
     ),
     debug_report: bool = typer.Option(
         False,
@@ -101,7 +101,7 @@ def _run_text(
     out_path: str,
     *,
     include_line_numbers: bool = True,
-    max_line_numbers: int = 10,
+    max_line_numbers: int = 0,
     debug_report: bool = False,
 ) -> None:
     """Execute text engine comparison and write report."""
@@ -143,6 +143,8 @@ def _run_text(
         report.samples_agg = result["samples_agg"]
     if result.get("error"):
         report.error = ReconError(**result["error"])
+    if result.get("warnings"):
+        report.warnings = result["warnings"]
 
     write_report(report, out_path)
     typer.echo(f"Loaded config: {cfg.type}")

@@ -337,4 +337,5 @@ class ReconReport(BaseModel):
     details: TabularDetails | TextDetails
     samples: list[Any] | dict[str, Any] = Field(default_factory=list)
     samples_agg: list[Any] | None = None
+    warnings: list[str] | None = None
     error: ReconError | None = None

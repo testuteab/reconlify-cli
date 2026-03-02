@@ -245,12 +245,15 @@ def _compare_unordered(
     target_stream: _LineStream,
     *,
     include_line_numbers: bool = True,
-    max_line_numbers: int = 10,
+    max_line_numbers: int = 0,
 ) -> tuple[int, list[dict[str, Any]], dict[str, int]]:
     """Unordered multiset comparison: streaming Counter build + full collection.
 
     Returns (different_lines, samples_agg, unordered_stats).
+
+    *max_line_numbers*: 0 means unlimited; positive integer caps per line.
     """
+    unlimited = max_line_numbers <= 0
     source_counts: Counter[str] = Counter()
     target_counts: Counter[str] = Counter()
     src_index: dict[str, list[int]] = {}
@@ -262,14 +265,14 @@ def _compare_unordered(
         source_counts[line] += 1
         if include_line_numbers:
             lst = src_index.setdefault(line, [])
-            if len(lst) < max_line_numbers:
+            if unlimited or len(lst) < max_line_numbers:
                 lst.append(orig_num)
 
     for line, orig_num, _, _raw in target_stream:
         target_counts[line] += 1
         if include_line_numbers:
             lst = tgt_index.setdefault(line, [])
-            if len(lst) < max_line_numbers:
+            if unlimited or len(lst) < max_line_numbers:
                 lst.append(orig_num)
 
     # --- Compute stats and collect ALL mismatched lines in two passes. ---
@@ -332,7 +335,7 @@ def compare_text(
     config: TextConfig,
     *,
     include_line_numbers: bool = True,
-    max_line_numbers: int = 10,
+    max_line_numbers: int = 0,
     debug_report: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Compare two text files according to the given TextConfig.
@@ -449,5 +452,21 @@ def compare_text(
         details["unordered_stats"] = unordered_stats
         report_dict["samples"] = []
         report_dict["samples_agg"] = samples_agg
+
+        # Warn when unlimited line numbers produces very large arrays
+        _LINE_NUMBER_WARN_THRESHOLD = 5000
+        if include_line_numbers and max_line_numbers <= 0:
+            large = [
+                e["line"][:80]
+                for e in samples_agg
+                if len(e.get("source_line_numbers", [])) > _LINE_NUMBER_WARN_THRESHOLD
+                or len(e.get("target_line_numbers", [])) > _LINE_NUMBER_WARN_THRESHOLD
+            ]
+            if large:
+                report_dict.setdefault("warnings", []).append(
+                    f"Large line_numbers arrays: {len(large)} distinct line(s) "
+                    f"exceed {_LINE_NUMBER_WARN_THRESHOLD} entries. "
+                    f"Use --max-line-numbers to cap if report size is a concern."
+                )
 
     return report_dict, exit_code

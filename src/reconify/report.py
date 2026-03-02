@@ -121,7 +121,7 @@ def write_report(report: ReconReport, path: str) -> None:
     data = report.model_dump(mode="json")
 
     # Strip known optional fields that are None at specific levels
-    for key in ("error", "samples_agg"):
+    for key in ("error", "samples_agg", "warnings"):
         if key in data and data[key] is None:
             del data[key]
     details = data.get("details")

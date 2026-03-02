@@ -47,7 +47,7 @@ reconify run config.yaml --out results.json
 |--------|---------|-------------|
 | `--out PATH` | `report.json` | Output path for the JSON report |
 | `--include-line-numbers` | on | Include original line numbers in text samples |
-| `--max-line-numbers N` | 10 | Max line numbers per distinct line (unordered mode) |
+| `--max-line-numbers N` | 0 (unlimited) | Max line numbers per distinct line (unordered mode). 0 = unlimited. |
 | `--debug-report` | off | Include processed line numbers in text samples |
 
 ## Quick Start — Tabular

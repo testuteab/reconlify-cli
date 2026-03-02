@@ -661,8 +661,9 @@ Invariant: `source_only_lines + target_only_lines == different_lines`.
 
 - Sorted by largest count difference first, then by line content
   lexicographically.
-- Line number lists are capped to `--max-line-numbers` entries (default
-  10). The `*_truncated` flag indicates when line numbers were omitted.
+- By default, all line numbers are stored (unlimited). Use
+  `--max-line-numbers N` to cap to N entries per side when report size is a
+  concern. The `*_truncated` flag indicates when line numbers were omitted.
 - When `--no-include-line-numbers` is used, all four line-number fields are
   omitted.
 
