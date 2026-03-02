@@ -328,22 +328,22 @@ class TestRulesE2E:
 
 
 @pytest.mark.e2e
-class TestPerformanceE2E:
-    def test_unordered_large_mismatches(self, e2e_runner):
-        """5000 distinct mismatches, sample_limit=10 -> exactly 10 agg samples."""
-        source_lines = "\n".join(f"line_{i:05d}" for i in range(5000)) + "\n"
+class TestAllDiffsCollectedE2E:
+    def test_unordered_all_mismatches_collected(self, e2e_runner):
+        """All distinct mismatches collected without truncation."""
+        n = 100
+        source_lines = "\n".join(f"line_{i:05d}" for i in range(n)) + "\n"
         ec, r = e2e_runner(
             "text_unordered_large_mismatches",
-            cli_flags=["--sample-limit", "10"],
             source_bytes=source_lines.encode(),
             target_bytes=b"",
         )
         assert ec == 1
         _assert_text_base(r)
         _assert_unordered_report(r)
-        assert r["summary"]["different_lines"] == 5000
-        assert len(r["samples_agg"]) == 10
-        assert r["details"]["unordered_stats"]["distinct_mismatched_lines"] == 5000
+        assert r["summary"]["different_lines"] == n
+        assert len(r["samples_agg"]) == n
+        assert r["details"]["unordered_stats"]["distinct_mismatched_lines"] == n
         # All diffs=1, so sorted alphabetically: line_00000, line_00001, ...
         for i, sample in enumerate(r["samples_agg"]):
             assert sample["line"] == f"line_{i:05d}"
@@ -415,40 +415,38 @@ class TestTrimLinesLineByLineE2E:
 
 
 # ---------------------------------------------------------------------------
-# NEW: sample_limit truncation (line_by_line)
+# NEW: all diffs collected (line_by_line)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.e2e
-class TestSampleLimitTruncationE2E:
-    def test_sample_limit_truncation(self, e2e_runner):
-        """--sample-limit 2 caps samples list at 2 even with 5 mismatches."""
+class TestAllDiffsLineByLineE2E:
+    def test_all_diffs_collected_line_by_line(self, e2e_runner):
+        """All 5 mismatches are included in samples without truncation."""
         ec, r = e2e_runner(
             "text_sample_limit_truncation_line_by_line",
-            cli_flags=["--sample-limit", "2"],
         )
         assert ec == 1
         _assert_text_base(r)
         assert r["details"]["mode"] == "line_by_line"
         assert r["summary"]["different_lines"] == 5
         assert isinstance(r["samples"], list)
-        assert len(r["samples"]) == 2
+        assert len(r["samples"]) == 5
         _assert_line_by_line_samples(r)
         assert "error" not in r
 
 
 # ---------------------------------------------------------------------------
-# NEW: sample_limit truncation (unordered_lines)
+# NEW: all diffs collected (unordered_lines)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.e2e
-class TestSampleLimitTruncationUnorderedE2E:
-    def test_sample_limit_truncation_unordered_agg(self, e2e_runner):
-        """--sample-limit 2 caps samples_agg to top-2 by abs diff."""
+class TestAllDiffsUnorderedE2E:
+    def test_all_diffs_collected_unordered_agg(self, e2e_runner):
+        """All mismatched distinct lines are included in samples_agg."""
         ec, r = e2e_runner(
             "text_sample_limit_truncation_unordered_agg",
-            cli_flags=["--sample-limit", "2"],
         )
         assert ec == 1
         _assert_text_base(r)
@@ -458,21 +456,26 @@ class TestSampleLimitTruncationUnorderedE2E:
         assert r["samples"] == []
 
         agg = r["samples_agg"]
-        assert len(agg) == 2
+        assert len(agg) == 4  # all 4 distinct mismatched lines
 
-        # Top-1: D has abs diff 3 (source=0, target=3)
+        # Sorted by abs_diff DESC, then line ASC
+        # D has abs diff 3 (source=0, target=3)
         assert agg[0]["line"] == "D"
         assert agg[0]["source_count"] == 0
         assert agg[0]["target_count"] == 3
         assert agg[0]["source_line_numbers"] == []
         assert agg[0]["target_line_numbers"] == [3, 4, 5]
 
-        # Top-2: A has abs diff 2 (source=3, target=1)
+        # A has abs diff 2 (source=3, target=1)
         assert agg[1]["line"] == "A"
         assert agg[1]["source_count"] == 3
         assert agg[1]["target_count"] == 1
         assert agg[1]["source_line_numbers"] == [1, 2, 3]
         assert agg[1]["target_line_numbers"] == [1]
+
+        # B has abs diff 1 (source=2, target=1), C has abs diff 1 (source=1, target=0)
+        assert agg[2]["line"] == "B"
+        assert agg[3]["line"] == "C"
 
         # unordered_stats reflects all 4 distinct mismatched lines
         stats = r["details"]["unordered_stats"]

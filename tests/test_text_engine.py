@@ -181,8 +181,8 @@ def test_unordered_aggregated_samples_ordering(tmp_path):
     assert agg[1]["target_line_numbers"] == [3, 4, 5]
 
 
-def test_unordered_sample_limit(tmp_path):
-    """samples_agg should respect sample_limit."""
+def test_unordered_all_samples_collected(tmp_path):
+    """samples_agg should include all mismatched distinct lines."""
     source = tmp_path / "source.txt"
     target = tmp_path / "target.txt"
     # 20 distinct mismatched lines
@@ -196,11 +196,11 @@ def test_unordered_sample_limit(tmp_path):
         mode="unordered_lines",
     )
 
-    report, exit_code = compare_text(cfg, sample_limit=5)
+    report, exit_code = compare_text(cfg)
 
     assert exit_code == 1
     assert report["summary"]["different_lines"] == 20
-    assert len(report["samples_agg"]) == 5
+    assert len(report["samples_agg"]) == 20
     assert report["details"]["unordered_stats"]["distinct_mismatched_lines"] == 20
 
 
@@ -515,8 +515,8 @@ def test_line_by_line_with_crlf(tmp_path):
     assert report["summary"]["different_lines"] == 0
 
 
-def test_sample_limit(tmp_path):
-    """Samples should be capped at sample_limit."""
+def test_all_samples_collected(tmp_path):
+    """All diff samples should be included without truncation."""
     source = tmp_path / "source.txt"
     target = tmp_path / "target.txt"
     # 100 different lines
@@ -529,11 +529,11 @@ def test_sample_limit(tmp_path):
         target=str(target),
     )
 
-    report, exit_code = compare_text(cfg, sample_limit=5)
+    report, exit_code = compare_text(cfg)
 
     assert exit_code == 1
     assert report["summary"]["different_lines"] == 100
-    assert len(report["samples"]) == 5
+    assert len(report["samples"]) == 100
 
 
 def test_ignore_blank_lines(tmp_path):
@@ -865,8 +865,8 @@ def test_cli_text_run_with_diffs(tmp_path):
     assert data["summary"]["different_lines"] == 1
 
 
-def test_cli_sample_limit_option(tmp_path):
-    """--sample-limit should be passed through to text engine."""
+def test_cli_all_diffs_included(tmp_path):
+    """CLI includes all diff samples without truncation."""
     source = tmp_path / "source.txt"
     target = tmp_path / "target.txt"
     source.write_text("\n".join(f"s{i}" for i in range(50)) + "\n")
@@ -878,12 +878,12 @@ def test_cli_sample_limit_option(tmp_path):
 
     result = runner.invoke(
         app,
-        ["run", str(cfg_file), "--out", str(report_path), "--sample-limit", "3"],
+        ["run", str(cfg_file), "--out", str(report_path)],
     )
 
     assert result.exit_code == 1
     data = json.loads(report_path.read_text())
-    assert len(data["samples"]) == 3
+    assert len(data["samples"]) == 50
 
 
 def test_cli_unordered_report_structure(tmp_path):
@@ -985,11 +985,12 @@ def test_cli_no_include_line_numbers(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_performance_unordered_large_mismatches(tmp_path):
-    """5000 distinct mismatched lines with sample_limit=10: only 10 samples returned."""
+def test_unordered_all_mismatches_collected_and_ordered(tmp_path):
+    """All distinct mismatched lines collected with deterministic ordering."""
     source = tmp_path / "source.txt"
     target = tmp_path / "target.txt"
-    source.write_text("\n".join(f"line_{i:05d}" for i in range(5000)) + "\n")
+    n = 100
+    source.write_text("\n".join(f"line_{i:05d}" for i in range(n)) + "\n")
     target.write_text("")
 
     cfg = TextConfig(
@@ -999,12 +1000,12 @@ def test_performance_unordered_large_mismatches(tmp_path):
         mode="unordered_lines",
     )
 
-    report, exit_code = compare_text(cfg, sample_limit=10)
+    report, exit_code = compare_text(cfg)
 
     assert exit_code == 1
-    assert report["summary"]["different_lines"] == 5000
-    assert len(report["samples_agg"]) == 10
-    assert report["details"]["unordered_stats"]["distinct_mismatched_lines"] == 5000
+    assert report["summary"]["different_lines"] == n
+    assert len(report["samples_agg"]) == n
+    assert report["details"]["unordered_stats"]["distinct_mismatched_lines"] == n
     # All diffs are 1, so sorted alphabetically: line_00000, line_00001, ...
     for i, sample in enumerate(report["samples_agg"]):
         assert sample["line"] == f"line_{i:05d}"
@@ -1074,8 +1075,8 @@ def test_replacement_samples_populated(tmp_path):
     assert rs[0]["rules"][0]["matches"] == 1
 
 
-def test_audit_samples_capped_by_sample_limit(tmp_path):
-    """20 dropped lines, sample_limit=5 -> only 5 dropped_samples."""
+def test_audit_samples_all_collected(tmp_path):
+    """All 20 dropped lines are collected in dropped_samples."""
     source = tmp_path / "source.txt"
     lines = [f"# drop {i}" for i in range(20)] + ["data\n"]
     source.write_text("\n".join(lines))
@@ -1089,11 +1090,11 @@ def test_audit_samples_capped_by_sample_limit(tmp_path):
         drop_lines_regex=["^#"],
     )
 
-    report, _exit_code = compare_text(cfg, sample_limit=5)
+    report, _exit_code = compare_text(cfg)
 
     ds = report["details"]["dropped_samples"]
-    assert len(ds) == 5
-    # First 5 dropped lines from source
+    assert len(ds) == 20
+    # All 20 dropped lines from source
     for i, s in enumerate(ds):
         assert s["side"] == "source"
         assert s["line_number"] == i + 1
@@ -1426,8 +1427,8 @@ def test_unordered_replacement_samples_multi_rule(tmp_path):
     assert src_samples[0]["rules"][1]["pattern"] == r"\d{4}-\d{2}-\d{2}"
 
 
-def test_unordered_audit_samples_capped_by_sample_limit(tmp_path):
-    """Unordered mode respects --sample-limit for audit samples per side."""
+def test_unordered_audit_samples_all_collected(tmp_path):
+    """Unordered mode collects all audit samples without truncation."""
     source = tmp_path / "source.txt"
     # 20 lines that will be dropped
     source.write_text("\n".join(f"# line {i}" for i in range(20)) + "\nalpha\n")
@@ -1442,18 +1443,19 @@ def test_unordered_audit_samples_capped_by_sample_limit(tmp_path):
         drop_lines_regex=["^#"],
     )
 
-    report, _exit_code = compare_text(cfg, sample_limit=5)
+    report, _exit_code = compare_text(cfg)
 
     ds = report["details"]["dropped_samples"]
-    assert len(ds) == 5  # capped at sample_limit per side
+    assert len(ds) == 20  # all dropped lines collected
 
 
-def test_performance_line_by_line_large(tmp_path):
-    """5000 different lines with sample_limit=10: only 10 samples returned."""
+def test_all_diffs_collected_line_by_line(tmp_path):
+    """All different lines are collected without truncation."""
     source = tmp_path / "source.txt"
     target = tmp_path / "target.txt"
-    source.write_text("\n".join(f"src_{i}" for i in range(5000)) + "\n")
-    target.write_text("\n".join(f"tgt_{i}" for i in range(5000)) + "\n")
+    n = 500
+    source.write_text("\n".join(f"src_{i}" for i in range(n)) + "\n")
+    target.write_text("\n".join(f"tgt_{i}" for i in range(n)) + "\n")
 
     cfg = TextConfig(
         type="text",
@@ -1461,8 +1463,8 @@ def test_performance_line_by_line_large(tmp_path):
         target=str(target),
     )
 
-    report, exit_code = compare_text(cfg, sample_limit=10)
+    report, exit_code = compare_text(cfg)
 
     assert exit_code == 1
-    assert report["summary"]["different_lines"] == 5000
-    assert len(report["samples"]) == 10
+    assert report["summary"]["different_lines"] == n
+    assert len(report["samples"]) == n

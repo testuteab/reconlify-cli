@@ -394,24 +394,7 @@ csv:
 All values are read as strings (`all_varchar = true`). Numeric
 comparisons happen via tolerance rules, which cast to DOUBLE internally.
 
-## 11. Sampling and Output Control
-
-### Sampling
-
-```yaml
-sampling:
-  sample_limit: 200              # default: 200
-  sample_limit_per_type: 50      # default: null (uses sample_limit)
-```
-
-`sample_limit` caps the total number of sample entries per category.
-`sample_limit_per_type` overrides the per-category limit when set.
-
-The `--sample-limit` CLI flag (default 2000) applies to the text engine.
-The tabular engine uses the config-level `sampling.sample_limit` (default
-200).
-
-### Output control
+## 11. Output Control
 
 ```yaml
 output:
@@ -486,8 +469,7 @@ The tabular engine uses DuckDB for in-memory SQL execution. This provides:
   inference issues.
 
 For large files (1M+ rows), the engine is designed to complete within
-roughly 60 seconds on a modern laptop. Sample limits prevent the report
-from growing unbounded.
+roughly 60 seconds on a modern laptop.
 
 ---
 
@@ -679,7 +661,6 @@ Invariant: `source_only_lines + target_only_lines == different_lines`.
 
 - Sorted by largest count difference first, then by line content
   lexicographically.
-- Capped to `--sample-limit` entries (default 2000).
 - Line number lists are capped to `--max-line-numbers` entries (default
   10). The `*_truncated` flag indicates when line numbers were omitted.
 - When `--no-include-line-numbers` is used, all four line-number fields are
@@ -998,9 +979,6 @@ csv:
   delimiter: ","
   header: true
   encoding: utf-8
-
-sampling:
-  sample_limit: 200
 
 output:
   include_row_samples: true

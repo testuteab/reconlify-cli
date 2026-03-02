@@ -27,7 +27,6 @@ def test_tabular_minimal() -> None:
     assert cfg.compare.case_insensitive is False
     assert cfg.filters.exclude_keys == []
     assert cfg.csv.delimiter == ","
-    assert cfg.sampling.sample_limit == 200
 
 
 def test_tabular_full() -> None:
@@ -46,7 +45,6 @@ def test_tabular_full() -> None:
                 "exclude_keys": [{"id": "1", "region": "US"}],
             },
             "csv": {"delimiter": "|"},
-            "sampling": {"sample_limit": 100},
         }
     )
     assert cfg.compare.case_insensitive is True

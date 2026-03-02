@@ -116,12 +116,6 @@ csv:
   header: bool               # default true
   encoding: string           # default "utf-8" (only UTF-8 supported)
 
-## sampling (optional)
-
-sampling:
-  sample_limit: int          # default 200
-  sample_limit_per_type: int # default null (uses sample_limit)
-
 ## output (optional)
 
 output:

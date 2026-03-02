@@ -121,11 +121,6 @@ class TabularCsvOptions(BaseModel):
     encoding: str = "utf-8"
 
 
-class TabularSampling(BaseModel):
-    sample_limit: int = 200
-    sample_limit_per_type: int | None = None
-
-
 class TabularOutput(BaseModel):
     include_row_samples: bool = True
     include_column_stats: bool = True
@@ -140,7 +135,6 @@ class TabularConfig(BaseModel):
     compare: TabularCompare = Field(default_factory=TabularCompare)
     filters: TabularFilters = Field(default_factory=TabularFilters)
     csv: TabularCsvOptions = Field(default_factory=TabularCsvOptions)
-    sampling: TabularSampling = Field(default_factory=TabularSampling)
     output: TabularOutput = Field(default_factory=TabularOutput)
     ignore_columns: list[str] = Field(default_factory=list)
     tolerance: dict[str, float] = Field(default_factory=dict)

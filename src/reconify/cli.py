@@ -32,11 +32,6 @@ def run(
         "--out",
         help="Output path for the JSON report (default: report.json in cwd).",
     ),
-    sample_limit: int = typer.Option(
-        2000,
-        "--sample-limit",
-        help="Maximum number of sample diffs to include in the report.",
-    ),
     include_line_numbers: bool = typer.Option(
         True,
         "--include-line-numbers/--no-include-line-numbers",
@@ -79,7 +74,6 @@ def run(
         if isinstance(cfg, TextConfig):
             _run_text(
                 cfg,
-                sample_limit,
                 out_path,
                 include_line_numbers=include_line_numbers,
                 max_line_numbers=max_line_numbers,
@@ -104,7 +98,6 @@ def run(
 
 def _run_text(
     cfg: TextConfig,
-    sample_limit: int,
     out_path: str,
     *,
     include_line_numbers: bool = True,
@@ -116,7 +109,6 @@ def _run_text(
 
     result, exit_code = compare_text(
         cfg,
-        sample_limit=sample_limit,
         include_line_numbers=include_line_numbers,
         max_line_numbers=max_line_numbers,
         debug_report=debug_report,

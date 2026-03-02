@@ -285,9 +285,7 @@ Tabular samples is a dict with four categories:
 }
 ```
 
-Each category is limited by `sampling.sample_limit_per_type` (falls back to
-`sampling.sample_limit` when not set; default 200). When
-`output.include_row_samples` is false, all four lists are empty. Entries
+When `output.include_row_samples` is false, all four lists are empty. Entries
 within each list are sorted by key values ascending for determinism.
 
 ### samples.missing_in_target / samples.missing_in_source
@@ -568,8 +566,8 @@ lines removed by `drop_lines_regex` (step 6); those are counted separately in
 | `rules_applied`              | always   | Counts of rule application effects. See below. |
 | `normalize`                  | always   | The effective normalization settings used by the engine. See below. |
 | `unordered_stats`            | only in `unordered_lines` mode | Aggregate breakdown of unordered mismatches. Omitted in `line_by_line` mode. Always present when mode is `unordered_lines`, regardless of whether differences exist. |
-| `dropped_samples`            | always   | List of audit samples for lines removed by `drop_lines_regex`. Capped at `--sample-limit` per side. Always present (may be `[]`). See below. |
-| `replacement_samples`        | always   | List of audit samples for lines modified by `replace_regex`. Capped at `--sample-limit` per side. Always present (may be `[]`). See below. |
+| `dropped_samples`            | always   | List of audit samples for lines removed by `drop_lines_regex`. Always present (may be `[]`). See below. |
+| `replacement_samples`        | always   | List of audit samples for lines modified by `replace_regex`. Always present (may be `[]`). See below. |
 
 **Invariant:**
 
@@ -684,10 +682,6 @@ Defaults to `[]` when no lines were dropped.
 | `raw`         | The original raw line content before any pipeline processing. |
 | `processed`   | The line content at the point of drop — after trim, collapse, and replace, but **before** case folding. Shows exactly what the drop regex matched against. |
 
-**Truncation:** Capped at `--sample-limit` entries per side (source samples
-listed first, then target). When more lines are dropped than the limit, only
-the first N encountered per side are stored.
-
 **Audit note:** A line can appear in both `dropped_samples` and
 `replacement_samples` if a replace rule fired on the line and then a drop
 pattern matched. This is correct and useful — it shows the full
@@ -726,8 +720,6 @@ rules that fired on that line. Always present in both `line_by_line` and
 | `processed`   | For kept lines: the final comparison value (after all pipeline steps including case folding). For dropped lines: the line content at the point of drop (pre-case-fold). |
 | `rules`       | Array of rules that fired on this line, in the order they were applied. Each entry contains `pattern` (the regex pattern string), `replace` (the replacement string), and `matches` (how many times this rule matched on this line, >= 1). |
 
-**Truncation:** Same as `dropped_samples` — capped per side at `--sample-limit`.
-
 **Audit note:** When multiple rules fire on a single line, all are listed
 in `rules`. Use `rules[].matches` to see how many substitutions each rule
 made. Compare `raw` to `processed` to see the cumulative effect. When
@@ -736,8 +728,7 @@ between `raw` and `processed` are due to lowercasing, not replacement rules.
 
 ## samples (line_by_line mode)
 
-A JSON list of diff entries. Limited to `--sample-limit` items (default
-2000). When there are no differences, the list is empty.
+A JSON list of diff entries. When there are no differences, the list is empty.
 
 ```json
 [
@@ -820,9 +811,6 @@ absent from every entry.
 
 **Ordering:** Sorted by `abs(source_count - target_count)` descending, then
 by `line` content lexicographically ascending for determinism.
-
-**Truncation:** Limited to `--sample-limit` items (default 2000). The
-top-N entries with the largest absolute count differences are kept.
 
 **Audit note:** Entries at the top have the largest frequency imbalance.
 Check `source_count` vs `target_count` to understand whether lines were
@@ -1100,7 +1088,6 @@ filtering/processing fields in `details`.
 
 | CLI flag                       | Effect on report |
 |--------------------------------|------------------|
-| `--sample-limit N`             | Caps `samples` list (line_by_line) or `samples_agg` list (unordered) to N entries. |
 | `--include-line-numbers` (default) | Includes `source_line_numbers`, `target_line_numbers`, and truncated flags in `samples_agg`. |
 | `--no-include-line-numbers`    | Omits all four line-number fields from `samples_agg` entries. |
 | `--max-line-numbers N`         | Caps stored line numbers per side per distinct line to N. Sets truncated flag when exceeded. |
@@ -1119,7 +1106,21 @@ filtering/processing fields in `details`.
 
 # Changelog
 
-**This revision (v1.3, revision 10):**
+**This revision (v1.3, revision 11):**
+
+- **Sample limits removed.** The `--sample-limit` CLI flag, the
+  `sampling.sample_limit` / `sampling.sample_limit_per_type` config options,
+  and all internal truncation logic have been removed. All diff samples,
+  audit samples (`dropped_samples`, `replacement_samples`), and aggregated
+  entries (`samples_agg`) now include **every** item without truncation.
+  Tabular sample categories (`missing_in_target`, `missing_in_source`,
+  `value_mismatches`, `excluded`) are no longer capped. Reports are complete
+  by default.
+- **`TabularSampling` config removed.** The `sampling` section in tabular
+  YAML configs is no longer recognized. Existing configs with `sampling:`
+  will fail validation.
+
+**Previous revision (v1.3, revision 10):**
 
 - **Version bumped to 1.3** to reflect schema changes in audit sample availability.
 - **Audit samples in unordered_lines mode:** `dropped_samples` and

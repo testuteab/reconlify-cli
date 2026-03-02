@@ -46,7 +46,6 @@ reconify run config.yaml --out results.json
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--out PATH` | `report.json` | Output path for the JSON report |
-| `--sample-limit N` | 2000 | Max sample entries in the report |
 | `--include-line-numbers` | on | Include original line numbers in text samples |
 | `--max-line-numbers N` | 10 | Max line numbers per distinct line (unordered mode) |
 | `--debug-report` | off | Include processed line numbers in text samples |

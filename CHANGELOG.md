@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Removed
+
+- **Sample limits removed (breaking).** The `--sample-limit` CLI flag,
+  `sampling.sample_limit`, and `sampling.sample_limit_per_type` config
+  options have been removed. All diff samples, audit samples, and
+  aggregated entries are now included in reports without truncation.
+- **`TabularSampling` config section removed (breaking).** The `sampling:`
+  block in tabular YAML configs is no longer recognized. Existing configs
+  that include `sampling:` will fail validation — remove the section to fix.
+
 ## [1.0.0] - 2026-02-25
 
 ### Added
@@ -22,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Per-column mismatch statistics (`column_stats`) in tabular reports.
 - Aggregated samples (`samples_agg`) for unordered text mode.
 - YAML-based configuration with Pydantic v2 validation.
-- CLI with `reconify run` command, `--out`, `--sample-limit`, `--include-line-numbers`, `--max-line-numbers`, and `--debug-report` options.
+- CLI with `reconify run` command, `--out`, `--include-line-numbers`, `--max-line-numbers`, and `--debug-report` options.
 - Exit codes: 0 (no differences), 1 (differences found), 2 (error).
 - E2E test suite runnable via `make e2e`.
 - Documentation: YAML schema reference, report schema reference, user guide, and PRD.

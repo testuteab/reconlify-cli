@@ -126,7 +126,7 @@ Supported operations:
 - 1M rows within ~60 seconds on modern laptop
 - Column projection mandatory
 - Vectorized execution (DuckDB recommended)
-- Sample-limited reporting (default max 2000 diff rows)
+- Complete reporting (all diffs included)
 
 ---
 

@@ -390,8 +390,6 @@ def _do_comparison(
     # ---------------------------------------------------------------
     # 7-8) COLLECT SAMPLES
     # ---------------------------------------------------------------
-    sample_limit = config.sampling.sample_limit
-    per_type_limit = config.sampling.sample_limit_per_type or sample_limit
     include_samples = config.output.include_row_samples
     key_order = ", ".join(f's."{k}" ASC' for k in keys)
     key_order_t = ", ".join(f't."{k}" ASC' for k in keys)
@@ -414,7 +412,6 @@ def _do_comparison(
             LEFT JOIN {tgt_compare_table} t ON {key_join_cond}
             WHERE {key_is_null_t}
             ORDER BY {key_order}
-            LIMIT {per_type_limit}
             """,
             keys,
             source_cols,
@@ -433,7 +430,6 @@ def _do_comparison(
             LEFT JOIN {src_compare_table} s ON {key_join_cond}
             WHERE {key_is_null_s}
             ORDER BY {key_order_t}
-            LIMIT {per_type_limit}
             """,
             keys,
             target_cols,
@@ -451,7 +447,6 @@ def _do_comparison(
                 norm_exprs_target,
                 eq_predicates,
                 key_join_cond,
-                per_type_limit,
                 src_compare_table,
                 tgt_compare_table,
             )
@@ -464,7 +459,6 @@ def _do_comparison(
                 keys,
                 source_proj_cols,
                 target_proj_cols,
-                per_type_limit,
             )
 
         # Excluded samples (row_filters)
@@ -478,7 +472,6 @@ def _do_comparison(
                 predicate,
                 params,
                 rf_cfg,
-                per_type_limit,
             )
             samples_excluded.extend(rf_excluded)
             # Re-sort combined excluded samples by keys ASC
@@ -762,7 +755,6 @@ def _fetch_mismatch_samples(
     norm_target: dict[str, str],
     eq_predicates: dict[str, str],
     key_join_cond: str,
-    limit: int,
     src_compare_table: str,
     tgt_compare_table: str,
 ) -> list[dict]:
@@ -786,7 +778,6 @@ def _fetch_mismatch_samples(
     INNER JOIN {tgt_compare_table} t ON {key_join_cond}
     WHERE {mismatch_cond}
     ORDER BY {key_order}
-    LIMIT {limit}
     """
     rows = con.execute(query).fetchall()
     desc = con.description
@@ -832,11 +823,9 @@ def _fetch_excluded_key_samples(
     keys: list[str],
     source_cols: list[str],
     target_cols: list[str],
-    limit: int,
 ) -> list[dict]:
     """Fetch samples of rows that were excluded by exclude_keys."""
     samples: list[dict] = []
-    per_side = limit
 
     join_cond_s = " AND ".join(f's."{k}" = _excluded_keys."{k}"' for k in keys)
     join_cond_t = " AND ".join(f't."{k}" = _excluded_keys."{k}"' for k in keys)
@@ -854,7 +843,6 @@ def _fetch_excluded_key_samples(
     FROM source_proj s
     INNER JOIN _excluded_keys ON {join_cond_s}
     ORDER BY {s_order}
-    LIMIT {per_side}
     """
     rows = con.execute(src_query).fetchall()
     desc = con.description
@@ -887,7 +875,6 @@ def _fetch_excluded_key_samples(
     FROM target_proj t
     INNER JOIN _excluded_keys ON {join_cond_t}
     ORDER BY {t_order}
-    LIMIT {per_side}
     """
     rows = con.execute(tgt_query).fetchall()
     desc = con.description
@@ -1218,7 +1205,6 @@ def _fetch_row_filter_excluded_samples(
     predicate: str,
     params: list[Any],
     rf_cfg: Any,
-    limit: int,
 ) -> list[dict]:
     """Fetch samples of rows excluded by row_filters."""
     samples: list[dict] = []
@@ -1240,7 +1226,6 @@ def _fetch_row_filter_excluded_samples(
                 source_cols,
                 where,
                 params,
-                limit,
             )
         )
 
@@ -1254,7 +1239,6 @@ def _fetch_row_filter_excluded_samples(
                 target_cols,
                 where,
                 params,
-                limit,
             )
         )
 
@@ -1270,7 +1254,6 @@ def _fetch_rf_side_samples(
     cols: list[str],
     where: str,
     params: list[Any],
-    limit: int,
 ) -> list[dict]:
     """Fetch row_filter excluded samples for one side."""
     data_cols = ", ".join(
@@ -1286,7 +1269,6 @@ def _fetch_rf_side_samples(
     FROM {table} r
     WHERE {where}
     ORDER BY {key_order}
-    LIMIT {limit}
     """
     rows = con.execute(query, params).fetchall()
     desc = con.description

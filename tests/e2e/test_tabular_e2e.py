@@ -462,8 +462,8 @@ class TestTabularCompareNormalizeTrimCase:
 
 
 @pytest.mark.e2e
-class TestTabularSamplingAndOutputFlags:
-    def test_sampling_limit_and_no_column_stats(self, e2e_runner):
+class TestTabularOutputFlags:
+    def test_all_mismatches_and_no_column_stats(self, e2e_runner):
         exit_code, report = e2e_runner("tabular_sampling_and_output_flags")
         assert exit_code == 1
         _assert_tabular_base(report)
@@ -471,9 +471,9 @@ class TestTabularSamplingAndOutputFlags:
         assert report["summary"]["rows_with_mismatches"] == 10
         assert report["summary"]["mismatched_cells"] == 10
 
-        # sample_limit_per_type=2 caps value_mismatches
+        # All value_mismatches included (no truncation)
         mismatches = report["samples"]["value_mismatches"]
-        assert len(mismatches) == 2
+        assert len(mismatches) == 10
         _assert_keys_sorted(mismatches, ["id"])
         for m in mismatches:
             _assert_line_numbers(m, "both")

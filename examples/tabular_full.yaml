@@ -50,9 +50,6 @@ csv:
   header: true
   encoding: utf-8
 
-sampling:
-  sample_limit: 200
-
 output:
   include_row_samples: true
   include_column_stats: true

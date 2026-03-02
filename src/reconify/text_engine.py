@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import heapq
 import re
 import time
 from collections import Counter
@@ -89,7 +88,6 @@ class _LineStream:
         "_drop_patterns",
         "_path",
         "_replace_rules",
-        "_sample_limit",
         "_side",
         "blank_lines_ignored",
         "drop_count",
@@ -108,14 +106,12 @@ class _LineStream:
         replace_rules: list[tuple[re.Pattern[str], str]],
         drop_patterns: list[re.Pattern[str]],
         side: str = "source",
-        sample_limit: int = 200,
     ) -> None:
         self._path = path
         self._config = config
         self._replace_rules = replace_rules
         self._drop_patterns = drop_patterns
         self._side = side
-        self._sample_limit = sample_limit
         self.blank_lines_ignored = 0
         self.drop_count = 0
         self.dropped_samples: list[dict[str, Any]] = []
@@ -142,32 +138,30 @@ class _LineStream:
             # Capture replacement samples (line may also be dropped)
             if rc > 0:
                 self.replacement_lines_affected += 1
-                if len(self.replacement_samples) < self._sample_limit:
-                    self.replacement_samples.append(
-                        {
-                            "side": self._side,
-                            "line_number": orig_line_num,
-                            "raw": raw_line,
-                            "processed": dropped_content if dropped else (result or ""),
-                            "rules": [
-                                {"pattern": pat, "replace": repl, "matches": n}
-                                for pat, repl, n in rules_matched
-                            ],
-                        }
-                    )
+                self.replacement_samples.append(
+                    {
+                        "side": self._side,
+                        "line_number": orig_line_num,
+                        "raw": raw_line,
+                        "processed": dropped_content if dropped else (result or ""),
+                        "rules": [
+                            {"pattern": pat, "replace": repl, "matches": n}
+                            for pat, repl, n in rules_matched
+                        ],
+                    }
+                )
 
             if dropped:
                 self.drop_count += 1
                 # Capture dropped samples
-                if len(self.dropped_samples) < self._sample_limit:
-                    self.dropped_samples.append(
-                        {
-                            "side": self._side,
-                            "line_number": orig_line_num,
-                            "raw": raw_line,
-                            "processed": dropped_content,
-                        }
-                    )
+                self.dropped_samples.append(
+                    {
+                        "side": self._side,
+                        "line_number": orig_line_num,
+                        "raw": raw_line,
+                        "processed": dropped_content,
+                    }
+                )
             elif result is None:
                 self.blank_lines_ignored += 1
             if result is None:
@@ -200,7 +194,6 @@ class _LineStream:
 def _compare_line_by_line(
     source_stream: _LineStream,
     target_stream: _LineStream,
-    sample_limit: int,
     *,
     debug_report: bool = False,
 ) -> tuple[int, list[dict[str, Any]]]:
@@ -229,63 +222,32 @@ def _compare_line_by_line(
 
         if src_missing or tgt_missing or src_processed != tgt_processed:
             different += 1
-            if len(samples) < sample_limit:
-                entry: dict[str, Any] = {
-                    "line_number_source": src_orig,
-                    "line_number_target": tgt_orig,
-                    "raw_source": src_raw,
-                    "raw_target": tgt_raw,
-                    "processed_source": src_processed,
-                    "processed_target": tgt_processed,
-                    "source": src_processed,
-                    "target": tgt_processed,
-                }
-                if debug_report:
-                    entry["processed_line_number_source"] = None if src_missing else src_item[2]
-                    entry["processed_line_number_target"] = None if tgt_missing else tgt_item[2]
-                samples.append(entry)
+            entry: dict[str, Any] = {
+                "line_number_source": src_orig,
+                "line_number_target": tgt_orig,
+                "raw_source": src_raw,
+                "raw_target": tgt_raw,
+                "processed_source": src_processed,
+                "processed_target": tgt_processed,
+                "source": src_processed,
+                "target": tgt_processed,
+            }
+            if debug_report:
+                entry["processed_line_number_source"] = None if src_missing else src_item[2]
+                entry["processed_line_number_target"] = None if tgt_missing else tgt_item[2]
+            samples.append(entry)
 
     return different, samples
-
-
-class _ReverseLexKey:
-    """Wrapper that reverses lexicographic ordering of a string.
-
-    Used as a heap key so that the *worst* item (largest line content for
-    a given diff) sits at the heap root and can be evicted in O(log k).
-
-    The desired output order is abs_diff DESC, line ASC.  In a min-heap
-    the root is the smallest element — the one we want to evict first.
-    The "worst kept" item has the smallest diff; among equal diffs, the
-    largest line (last alphabetically).  Storing (diff, _ReverseLexKey)
-    makes the heap root hold exactly that worst item:
-      - smallest diff naturally floats to root
-      - reversed lex means the largest line compares as smallest
-    """
-
-    __slots__ = ("_s",)
-
-    def __init__(self, s: str) -> None:
-        self._s = s
-
-    def __lt__(self, other: _ReverseLexKey) -> bool:
-        return self._s > other._s
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, _ReverseLexKey):
-            return NotImplemented
-        return self._s == other._s
 
 
 def _compare_unordered(
     source_stream: _LineStream,
     target_stream: _LineStream,
-    sample_limit: int,
     *,
     include_line_numbers: bool = True,
     max_line_numbers: int = 10,
 ) -> tuple[int, list[dict[str, Any]], dict[str, int]]:
-    """Unordered multiset comparison: streaming Counter build + bounded top-N.
+    """Unordered multiset comparison: streaming Counter build + full collection.
 
     Returns (different_lines, samples_agg, unordered_stats).
     """
@@ -310,48 +272,14 @@ def _compare_unordered(
             if len(lst) < max_line_numbers:
                 lst.append(orig_num)
 
-    # --- Compute stats and collect top-N samples in two passes. ---
-    # Two passes over the Counter dicts avoids building a union set of all
-    # distinct keys, which would duplicate every key string and spike memory
-    # when files contain millions of distinct lines.
+    # --- Compute stats and collect ALL mismatched lines in two passes. ---
     different = 0
     source_only = 0
     target_only = 0
     distinct_mismatched = 0
-
-    # Bounded min-heap for top-N samples.  Each element is a 5-tuple:
-    #   (diff, _ReverseLexKey(line), line, source_count, target_count)
-    #
-    # The heap root (index 0) is the WORST kept item — smallest diff,
-    # and among equal diffs the largest line (via reversed lex ordering).
-    # This is exactly the item we want to evict when a better candidate
-    # arrives.  heapreplace swaps the root in O(log k).
-    heap: list[tuple[int, _ReverseLexKey, str, int, int]] = []
-
-    def _is_better(
-        diff: int,
-        line: str,
-        worst: tuple[int, _ReverseLexKey, str, int, int],
-    ) -> bool:
-        """Check if (diff, line) is strictly better than the worst heap entry.
-
-        Better = higher diff, or same diff with lexicographically smaller line.
-        The worst entry stores (diff, _, raw_line, ...) at indices 0 and 2.
-        """
-        if diff != worst[0]:
-            return diff > worst[0]
-        return line < worst[2]
-
-    def _heap_push(diff: int, line: str, sc: int, tc: int) -> None:
-        if sample_limit <= 0:
-            return
-        if len(heap) < sample_limit:
-            heapq.heappush(heap, (diff, _ReverseLexKey(line), line, sc, tc))
-        elif _is_better(diff, line, heap[0]):
-            heapq.heapreplace(heap, (diff, _ReverseLexKey(line), line, sc, tc))
+    mismatched: list[tuple[int, str, int, int]] = []  # (diff, line, sc, tc)
 
     # Pass 1: keys present in source_counts.
-    # Covers keys that appear in both sides AND keys only in source.
     for key, sc in source_counts.items():
         tc = target_counts.get(key, 0)
         diff = abs(sc - tc)
@@ -361,7 +289,7 @@ def _compare_unordered(
         distinct_mismatched += 1
         source_only += max(sc - tc, 0)
         target_only += max(tc - sc, 0)
-        _heap_push(diff, key, sc, tc)
+        mismatched.append((diff, key, sc, tc))
 
     # Pass 2: keys only in target_counts (source_count = 0).
     for key, tc in target_counts.items():
@@ -370,13 +298,13 @@ def _compare_unordered(
         different += tc
         distinct_mismatched += 1
         target_only += tc
-        _heap_push(tc, key, 0, tc)
+        mismatched.append((tc, key, 0, tc))
 
-    # Sort heap contents for deterministic output: abs_diff DESC, line ASC.
-    heap.sort(key=lambda e: (-e[0], e[2]))
+    # Sort for deterministic output: abs_diff DESC, line ASC.
+    mismatched.sort(key=lambda e: (-e[0], e[1]))
 
     samples_agg: list[dict[str, Any]] = []
-    for _diff, _rkey, line, sc, tc in heap:
+    for _diff, line, sc, tc in mismatched:
         entry: dict[str, Any] = {
             "line": line,
             "source_count": sc,
@@ -402,7 +330,6 @@ def _compare_unordered(
 
 def compare_text(
     config: TextConfig,
-    sample_limit: int = 2000,
     *,
     include_line_numbers: bool = True,
     max_line_numbers: int = 10,
@@ -425,7 +352,6 @@ def compare_text(
             replace_rules,
             drop_patterns,
             side="source",
-            sample_limit=sample_limit,
         )
         tgt_stream = _LineStream(
             config.target,
@@ -433,21 +359,18 @@ def compare_text(
             replace_rules,
             drop_patterns,
             side="target",
-            sample_limit=sample_limit,
         )
 
         if config.mode == TextMode.line_by_line:
             different, samples = _compare_line_by_line(
                 src_stream,
                 tgt_stream,
-                sample_limit,
                 debug_report=debug_report,
             )
         else:
             different, samples_agg, unordered_stats = _compare_unordered(
                 src_stream,
                 tgt_stream,
-                sample_limit,
                 include_line_numbers=include_line_numbers,
                 max_line_numbers=max_line_numbers,
             )
