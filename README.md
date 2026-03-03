@@ -1,58 +1,61 @@
 # Reconify
 
-Local-first, rule-based data reconciliation CLI.
+Reconify is a local-first CLI for semantic data reconciliation.
 
-Reconify compares structured (CSV/TSV) and unstructured (text) files using
-declarative YAML configs, producing deterministic JSON reports with
-machine-readable exit codes. All processing happens locally — no data leaves
-your machine.
+It compares datasets using declarative YAML rules and produces deterministic
+JSON reports with machine-readable exit codes. All processing happens
+locally — no data leaves your machine.
+
+Reconify is designed for:
+
+- ETL pipeline validation
+- Data migration verification
+- CI/CD dataset checks
+- Reconciliation audits
 
 ## Why Reconify?
 
-| Need | Alternative | Reconify |
-|------|------------|----------|
-| Compare two CSV exports | Manual Excel diff | Key-based matching with tolerance, normalization, and per-column rules |
-| Diff log files | `diff` / `comm` | Unordered-line multiset comparison with regex normalization |
-| Validate ETL output in CI | Custom scripts | YAML config + JSON report + exit codes, no code to maintain |
-| Audit filtered datasets | Enterprise recon tools | Local-only, open, deterministic, reproducible |
+Traditional diff tools show textual differences.
+
+Reconify performs **semantic reconciliation**:
+
+- Key-based row comparison for tabular data
+- Column-level mismatch detection
+- Normalization and transformation rules
+- Deterministic machine-readable JSON reports
+
+## Architecture
+
+Reconify consists of two projects:
+
+- **reconify-cli** — The deterministic reconciliation engine. It can be used
+  standalone in scripts, CI/CD pipelines, and automation.
+- **reconify-ui** — A desktop workbench that calls the CLI and visualizes
+  reports in a graphical interface.
+
+This repository contains `reconify-cli`.
 
 ## Installation
 
-Requires Python 3.11+.
+Requires **Python 3.11+**.
 
 ```bash
 pip install reconify-cli
-# or
-poetry install
 ```
 
-## CLI Usage
+For development, use [Poetry](https://python-poetry.org/):
 
 ```bash
-reconify run config.yaml
-reconify run config.yaml --out results.json
+git clone <repo-url> && cd reconify-cli
+make install          # runs: poetry install
+reconify --help
 ```
 
-### Exit Codes
+## Quick Start
 
-| Code | Meaning |
-|------|---------|
-| 0 | No differences found |
-| 1 | Differences found |
-| 2 | Error (config validation, runtime failure) |
+### Tabular (CSV/TSV)
 
-### CLI Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--out PATH` | `report.json` | Output path for the JSON report |
-| `--include-line-numbers` | on | Include original line numbers in text samples |
-| `--max-line-numbers N` | 0 (unlimited) | Max line numbers per distinct line (unordered mode). 0 = unlimited. |
-| `--debug-report` | off | Include processed line numbers in text samples |
-
-## Quick Start — Tabular
-
-Create `recon.yaml`:
+Create a config file `recon.yaml`:
 
 ```yaml
 type: tabular
@@ -60,20 +63,23 @@ source: source.csv
 target: target.csv
 keys:
   - id
+compare:
+  include_columns:
+    - amount
+    - currency
 ```
 
-Run:
+Run it:
 
 ```bash
 reconify run recon.yaml
-# Exit code 0 = match, 1 = differences, 2 = error
-echo $?
+# Output report written to: report.json
+
+reconify run recon.yaml --out report.json
+echo $?   # 0 = match, 1 = differences, 2 = error
 ```
 
-The report is written to `report.json` with summary counts, detailed
-metadata, and sample rows for every category of difference.
-
-## Quick Start — Text
+### Text (line_by_line / unordered_lines)
 
 ```yaml
 type: text
@@ -87,159 +93,91 @@ normalize:
 
 ```bash
 reconify run text_recon.yaml
+# Output report written to: report.json
 ```
 
 In `unordered_lines` mode, line order is ignored — Reconify compares
 occurrence counts of each distinct line across both files.
+In `line_by_line` mode (default), lines are compared positionally.
 
-## Tabular Engine Features
+See the `examples/` directory for minimal and full-featured config samples.
 
-**Key-based reconciliation** — Single or composite keys. Detects missing
-rows on either side and cell-level value mismatches.
+## Example Output
 
-```yaml
-keys:
-  - account_id
-  - region
+Running:
+
+```bash
+reconify run recon.yaml --out report.json
 ```
 
-**Column control** — Exclude columns from comparison, or restrict to a
-specific set:
-
-```yaml
-ignore_columns: [updated_at, internal_id]
-compare:
-  include_columns: [name, amount, status]   # compare only these
-  # or: exclude_columns: [notes]            # compare all except these
-```
-
-**Numeric tolerance** — Absolute tolerance per column. Values within range
-are considered equal:
-
-```yaml
-tolerance:
-  amount: 0.01
-  balance: 0.001
-```
-
-**String rules** — Per-column normalization before comparison:
-
-```yaml
-string_rules:
-  name:
-    - trim
-    - case_insensitive
-  code:
-    - regex_extract:
-        pattern: "^([A-Z]+)-"
-        group: 1
-```
-
-Supported rules: `trim`, `case_insensitive`, `contains`, `regex_extract`.
-
-**Source-side normalization** — Create virtual columns on the source side
-from existing columns, then compare against the target:
-
-```yaml
-normalization:
-  full_name:
-    - op: concat
-      args: [first_name, " ", last_name]
-    - op: trim
-```
-
-Supported ops: `map`, `concat`, `substr`, `add`, `sub`, `mul`, `div`,
-`coalesce`, `date_format`, `upper`, `lower`, `trim`, `round`.
-
-**Row filters** — Exclude specific key values or filter rows by rules:
-
-```yaml
-filters:
-  exclude_keys:
-    - { id: "999", region: "TEST" }
-  row_filters:
-    mode: exclude
-    apply_to: both
-    rules:
-      - column: status
-        op: equals
-        value: deleted
-```
-
-**TSV support** — Set the delimiter to tab:
-
-```yaml
-csv:
-  delimiter: "\t"
-```
-
-## Text Engine Features
-
-**Two comparison modes:**
-
-- `line_by_line` (default) — Positional comparison, line N vs line N.
-- `unordered_lines` — Multiset comparison of line occurrence counts.
-
-**Normalization options:**
-
-```yaml
-normalize:
-  trim_lines: true
-  collapse_whitespace: true
-  case_insensitive: true
-  ignore_blank_lines: true
-  normalize_newlines: true    # default
-```
-
-**Regex rules** — Drop or transform lines before comparison:
-
-```yaml
-drop_lines_regex:
-  - "^#"              # remove comments
-  - "^\\s*$"          # remove blank lines
-replace_regex:
-  - pattern: "\\d{4}-\\d{2}-\\d{2}"
-    replace: "DATE"
-```
-
-## Report Overview
-
-Every run produces a JSON report (`report.json` by default) with a
-consistent structure:
+produces a structured JSON report:
 
 ```json
 {
   "type": "tabular",
-  "version": "1.1",
-  "generated_at": "2026-01-15T12:00:00+00:00",
-  "config_hash": "sha256...",
   "summary": {
-    "source_rows": 1000,
-    "target_rows": 998,
-    "missing_in_target": 2,
-    "missing_in_source": 0,
-    "rows_with_mismatches": 5,
-    "mismatched_cells": 8,
-    "comparison_time_seconds": 0.42
-  },
-  "details": { "..." : "..." },
-  "samples": { "..." : "..." }
+    "missing_in_target": 3,
+    "missing_in_source": 1,
+    "rows_with_mismatches": 5
+  }
 }
 ```
 
-**`summary`** — Aggregate counts. Zero differences = exit code 0.
+The full report schema is documented in [REPORT_SCHEMA_v1.md](docs/REPORT_SCHEMA_v1.md).
 
-**`details`** — Metadata: keys used, columns compared, filter breakdown,
-per-column mismatch stats (`column_stats`).
+## CLI Usage
 
-**`samples`** — Concrete examples of differences. Tabular reports provide
-four categories: `missing_in_target`, `missing_in_source`,
-`value_mismatches`, `excluded`. Text reports provide a flat list
-(`line_by_line`) or aggregated entries (`samples_agg` in `unordered_lines`
-mode).
+```bash
+reconify run <config.yaml>                # default output: report.json
+reconify run <config.yaml> --out out.json # custom output path
+```
 
-**`error`** — Present only on exit code 2. Includes machine-readable
-`code`, human-readable `message`, and `details`.
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--out PATH` | `report.json` | Output path for the JSON report |
+| `--include-line-numbers` / `--no-include-line-numbers` | on | Include original line numbers in text report samples |
+| `--max-line-numbers N` | `0` (unlimited) | Max line numbers per distinct line in unordered mode. 0 = unlimited |
+| `--debug-report` | off | Include processed line numbers in text report samples |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No differences found |
+| 1 | Differences found |
+| 2 | Error (config validation, file not found, runtime failure) |
+
+## Engines
+
+### Tabular Engine
+
+- **Key-based reconciliation** — Single or composite keys. Detects missing rows on either side and cell-level value mismatches.
+- **Column control** — Include or exclude specific columns from comparison.
+- **Numeric tolerance** — Absolute tolerance per column (e.g. `amount: 0.01`).
+- **String rules** — Per-column normalization: `trim`, `case_insensitive`, `contains`, `regex_extract`.
+- **Source-side normalization** — Virtual columns via ops: `map`, `concat`, `substr`, `add`, `sub`, `mul`, `div`, `coalesce`, `date_format`, `upper`, `lower`, `trim`, `round`.
+- **Row filters** — Exclude specific key values or filter rows by column rules.
+- **TSV support** — Set `csv.delimiter: "\t"`.
+
+### Text Engine
+
+- **Two comparison modes:** `line_by_line` (positional) and `unordered_lines` (multiset).
+- **Normalization:** `trim_lines`, `collapse_whitespace`, `case_insensitive`, `ignore_blank_lines`, `normalize_newlines`.
+- **Regex rules:** `drop_lines_regex` to remove lines, `replace_regex` to transform lines before comparison.
+
+## Report Format
+
+Every run produces a JSON report with a consistent structure:
+
+| Section | Description |
+|---------|-------------|
+| `summary` | Aggregate counts (rows, mismatches, missing). Zero differences = exit code 0 |
+| `details` | Metadata: keys used, columns compared, filters applied, per-column mismatch stats |
+| `samples` | Concrete examples of differences (tabular: `missing_in_target`, `missing_in_source`, `value_mismatches`, `excluded`; text: flat list or `samples_agg`) |
+| `error` | Present only on exit code 2. Machine-readable `code`, human-readable `message`, and `details` |
+| `warnings` | Optional list of warning strings (e.g. large line-number arrays in unordered mode) |
 
 ## CI/CD Integration
 
@@ -264,24 +202,41 @@ mode).
     path: report.json
 ```
 
-## Documentation
+Reconify intentionally returns exit code **1** when differences are found.
+This allows CI pipelines to decide whether differences should fail the build
+or simply produce a warning.
 
-- [YAML Config Schema](docs/YAML_SCHEMA_v1.md) — Full reference for all
-  configuration options.
-- [Report Schema](docs/REPORT_SCHEMA_v1.md) — Complete specification of the
-  JSON report format, field semantics, and audit notes.
-- [User Guide](docs/USER_GUIDE_v1.md) — In-depth guide covering both
-  engines, configuration patterns, and best practices.
-- [Product Requirements](docs/PRD_v1.md) — V1 scope and design rationale.
+Exit code **2** indicates a configuration or runtime error and should
+normally fail the pipeline.
 
 ## Development
 
 ```bash
-poetry install
-poetry run pytest              # unit + integration tests
-poetry run pytest -m e2e       # end-to-end CLI tests
-poetry run ruff check src tests
+make install       # install dependencies
+make test          # unit + integration tests (excludes e2e and perf)
+make e2e           # end-to-end CLI tests
+make lint          # ruff linter
+make format        # auto-fix lint + format
+make clean         # remove build artifacts and caches
 ```
+
+### Performance Testing
+
+```bash
+make perf          # generate fixtures + run full benchmark suite
+make perf-smoke    # lightweight perf smoke tests
+make perf-clean    # remove generated fixtures
+```
+
+See [docs/PERF_TESTING.md](docs/PERF_TESTING.md) for details and baseline results.
+
+## Documentation
+
+- [YAML Config Schema](docs/YAML_SCHEMA_v1.md) — Full reference for all configuration options
+- [Report Schema](docs/REPORT_SCHEMA_v1.md) — Complete specification of the JSON report format
+- [User Guide](docs/RECONIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
+- [Product Requirements](docs/RECONIFY_CLI_PRD_v1.md) — V1 scope and design rationale
+- [Performance Testing](docs/PERF_TESTING.md) — Benchmark methodology and baseline results
 
 ## Changelog
 
