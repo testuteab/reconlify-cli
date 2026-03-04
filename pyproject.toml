@@ -1,5 +1,5 @@
 [project]
-name = "reconify-cli"
+name = "reconlify-cli"
 version = "0.1.0"
 description = "Local-first, rule-based semantic data reconciliation CLI tool"
 authors = [
@@ -27,17 +27,17 @@ dependencies = [
 ]
 
 [project.scripts]
-reconify = "reconify.cli:app"
+reconlify = "reconlify.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/testuteab/reconify-cli"
-Repository = "https://github.com/testuteab/reconify-cli"
-"Bug Tracker" = "https://github.com/testuteab/reconify-cli/issues"
-Changelog = "https://github.com/testuteab/reconify-cli/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/testuteab/reconify-cli#readme"
+Homepage = "https://github.com/testuteab/reconlify-cli"
+Repository = "https://github.com/testuteab/reconlify-cli"
+"Bug Tracker" = "https://github.com/testuteab/reconlify-cli/issues"
+Changelog = "https://github.com/testuteab/reconlify-cli/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/testuteab/reconlify-cli#readme"
 
 [tool.poetry]
-packages = [{ include = "reconify", from = "src" }]
+packages = [{ include = "reconlify", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"

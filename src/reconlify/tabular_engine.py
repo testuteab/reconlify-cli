@@ -1,4 +1,4 @@
-"""Tabular (CSV) comparison engine for Reconify V1 using DuckDB."""
+"""Tabular (CSV) comparison engine for Reconlify V1 using DuckDB."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 import duckdb
 
-from reconify.models import NormOp, NormStep, RowFilterOp, RowFilterRule, TabularConfig
+from reconlify.models import NormOp, NormStep, RowFilterOp, RowFilterRule, TabularConfig
 
 
 def compare_tabular(config: TabularConfig) -> tuple[dict[str, Any], int]:
@@ -99,7 +99,7 @@ def _do_comparison(
             f"""
             CREATE TABLE {side}_raw AS
             SELECT
-                row_number() OVER () AS _reconify_line_number,
+                row_number() OVER () AS _reconlify_line_number,
                 *
             FROM read_csv_auto(
                 ?,
@@ -122,7 +122,7 @@ def _do_comparison(
     tgt_raw_cols = set(_get_column_names(con, "target_raw"))
 
     # Columns common to both sides (potential comparison + sample columns)
-    common_cols = (src_raw_cols & tgt_raw_cols) - {"_reconify_line_number"}
+    common_cols = (src_raw_cols & tgt_raw_cols) - {"_reconlify_line_number"}
 
     key_set = set(keys)
 
@@ -142,14 +142,14 @@ def _do_comparison(
             rf_cols.add(rule.column)
 
     src_needed = (
-        {"_reconify_line_number"}
+        {"_reconlify_line_number"}
         | key_set
         | common_cols
         | norm_input_cols
         | (rf_cols & src_raw_cols)
     )
     tgt_needed = (
-        {"_reconify_line_number"}
+        {"_reconlify_line_number"}
         | key_set
         | common_cols
         | (norm_output_cols & tgt_raw_cols)
@@ -203,7 +203,7 @@ def _do_comparison(
     if rf_cfg and rf_cfg.rules:
         # Validate columns exist
         available_cols = set(_get_column_names(con, "source_after_ek"))
-        available_cols.discard("_reconify_line_number")
+        available_cols.discard("_reconlify_line_number")
         missing_cols = []
         for rule in rf_cfg.rules:
             if rule.column not in available_cols:
@@ -285,7 +285,7 @@ def _do_comparison(
 
     if config.normalization:
         src_cols_for_norm = set(_get_column_names(con, "source_filtered"))
-        src_cols_for_norm.discard("_reconify_line_number")
+        src_cols_for_norm.discard("_reconlify_line_number")
 
         norm_col_exprs = []
         for col_name, pipeline in config.normalization.items():
@@ -310,7 +310,7 @@ def _do_comparison(
     target_proj_cols = _get_column_names(con, "target_proj")
 
     common_cols = set(source_cols) & set(target_cols)
-    common_cols.discard("_reconify_line_number")
+    common_cols.discard("_reconlify_line_number")
     for k in keys:
         common_cols.discard(k)
 
@@ -345,8 +345,8 @@ def _do_comparison(
     # 6) COMPUTE DIFFERENCES
     # ---------------------------------------------------------------
     key_join_cond = " AND ".join(f's."{k}" IS NOT DISTINCT FROM t."{k}"' for k in keys)
-    key_is_null_t = "t._reconify_line_number IS NULL"
-    key_is_null_s = "s._reconify_line_number IS NULL"
+    key_is_null_t = "t._reconlify_line_number IS NULL"
+    key_is_null_s = "s._reconlify_line_number IS NULL"
 
     # A) missing_in_target
     missing_in_target_count = con.execute(
@@ -401,11 +401,11 @@ def _do_comparison(
 
     if include_samples:
         # Missing in target samples
-        s_all_cols = ", ".join(f's."{c}"' for c in source_cols if c != "_reconify_line_number")
+        s_all_cols = ", ".join(f's."{c}"' for c in source_cols if c != "_reconlify_line_number")
         samples_missing_target = _fetch_missing_samples(
             con,
             f"""
-            SELECT s._reconify_line_number as line_number,
+            SELECT s._reconlify_line_number as line_number,
                    {", ".join(f's."{k}"' for k in keys)}
                    {"," + s_all_cols if s_all_cols else ""}
             FROM {src_compare_table} s
@@ -419,11 +419,11 @@ def _do_comparison(
         )
 
         # Missing in source samples
-        t_all_cols = ", ".join(f't."{c}"' for c in target_cols if c != "_reconify_line_number")
+        t_all_cols = ", ".join(f't."{c}"' for c in target_cols if c != "_reconlify_line_number")
         samples_missing_source = _fetch_missing_samples(
             con,
             f"""
-            SELECT t._reconify_line_number as line_number,
+            SELECT t._reconlify_line_number as line_number,
                    {", ".join(f't."{k}"' for k in keys)}
                    {"," + t_all_cols if t_all_cols else ""}
             FROM {tgt_compare_table} t
@@ -739,7 +739,7 @@ def _fetch_missing_samples(
         # Row data (exclude keys and line number)
         row_data = {}
         for c in all_cols:
-            if c != "_reconify_line_number" and c not in keys and c in row_dict:
+            if c != "_reconlify_line_number" and c not in keys and c in row_dict:
                 row_data[c] = row_dict[c]
         entry["row"] = row_data
         samples.append(entry)
@@ -770,8 +770,8 @@ def _fetch_mismatch_samples(
         col_selects.append(f't."{c}" AS "target_{c}"')
 
     query = f"""
-    SELECT s._reconify_line_number AS source_line,
-           t._reconify_line_number AS target_line,
+    SELECT s._reconlify_line_number AS source_line,
+           t._reconlify_line_number AS target_line,
            {key_select},
            {", ".join(col_selects)}
     FROM {src_compare_table} s
@@ -832,12 +832,12 @@ def _fetch_excluded_key_samples(
 
     # Source excluded rows
     s_data_cols = ", ".join(
-        f's."{c}"' for c in source_cols if c != "_reconify_line_number" and c not in keys
+        f's."{c}"' for c in source_cols if c != "_reconlify_line_number" and c not in keys
     )
     s_key_select = ", ".join(f's."{k}"' for k in keys)
     s_order = ", ".join(f's."{k}" ASC' for k in keys)
     src_query = f"""
-    SELECT s._reconify_line_number AS line_number,
+    SELECT s._reconlify_line_number AS line_number,
            {s_key_select}
            {"," + s_data_cols if s_data_cols else ""}
     FROM source_proj s
@@ -856,7 +856,7 @@ def _fetch_excluded_key_samples(
             "row": {
                 c: row_dict[c]
                 for c in source_cols
-                if c != "_reconify_line_number" and c not in keys and c in row_dict
+                if c != "_reconlify_line_number" and c not in keys and c in row_dict
             },
             "reason": "exclude_keys",
         }
@@ -864,12 +864,12 @@ def _fetch_excluded_key_samples(
 
     # Target excluded rows
     t_data_cols = ", ".join(
-        f't."{c}"' for c in target_cols if c != "_reconify_line_number" and c not in keys
+        f't."{c}"' for c in target_cols if c != "_reconlify_line_number" and c not in keys
     )
     t_key_select = ", ".join(f't."{k}"' for k in keys)
     t_order = ", ".join(f't."{k}" ASC' for k in keys)
     tgt_query = f"""
-    SELECT t._reconify_line_number AS line_number,
+    SELECT t._reconlify_line_number AS line_number,
            {t_key_select}
            {"," + t_data_cols if t_data_cols else ""}
     FROM target_proj t
@@ -888,7 +888,7 @@ def _fetch_excluded_key_samples(
             "row": {
                 c: row_dict[c]
                 for c in target_cols
-                if c != "_reconify_line_number" and c not in keys and c in row_dict
+                if c != "_reconlify_line_number" and c not in keys and c in row_dict
             },
             "reason": "exclude_keys",
         }
@@ -1257,13 +1257,13 @@ def _fetch_rf_side_samples(
 ) -> list[dict]:
     """Fetch row_filter excluded samples for one side."""
     data_cols = ", ".join(
-        f'r."{c}"' for c in cols if c != "_reconify_line_number" and c not in keys
+        f'r."{c}"' for c in cols if c != "_reconlify_line_number" and c not in keys
     )
     key_select = ", ".join(f'r."{k}"' for k in keys)
     key_order = ", ".join(f'r."{k}" ASC' for k in keys)
 
     query = f"""
-    SELECT r._reconify_line_number AS line_number,
+    SELECT r._reconlify_line_number AS line_number,
            {key_select}
            {"," + data_cols if data_cols else ""}
     FROM {table} r
@@ -1285,7 +1285,7 @@ def _fetch_rf_side_samples(
             "row": {
                 c: row_dict[c]
                 for c in cols
-                if c != "_reconify_line_number" and c not in keys and c in row_dict
+                if c != "_reconlify_line_number" and c not in keys and c in row_dict
             },
             "reason": "row_filters",
         }

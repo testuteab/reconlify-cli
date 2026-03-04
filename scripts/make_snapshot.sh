@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT}/.artifacts"
-OUT_FILE="${OUT_DIR}/RECONIFY_CLI_PROJECT_SNAPSHOT.txt"
+OUT_FILE="${OUT_DIR}/RECONLIFY_CLI_PROJECT_SNAPSHOT.txt"
 
 mkdir -p "$OUT_DIR"
 
@@ -23,7 +23,7 @@ EXCLUDE_DIRS_REGEX='/(.git|.venv|dist|build|.pytest_cache|.ruff_cache|__pycache_
 INCLUDE_FILES_REGEX='(\.py|\.md|\.toml|\.yaml|\.yml|\.json|\.txt|\.ini|\.cfg|Makefile|Dockerfile)$'
 
 {
-  echo "# Reconify Project Snapshot"
+  echo "# Reconlify Project Snapshot"
   echo "# Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "# Root: ${ROOT}"
   echo

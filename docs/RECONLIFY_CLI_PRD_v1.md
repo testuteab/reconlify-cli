@@ -1,8 +1,8 @@
-# Reconify-cli – V1 Product Requirements Document
+# Reconlify-cli – V1 Product Requirements Document
 
 ## 1. Product Overview
 
-Reconify is a local-first, rule-based data reconciliation CLI tool designed for technical professionals.
+Reconlify is a local-first, rule-based data reconciliation CLI tool designed for technical professionals.
 
 All processing happens locally.
 No source data is uploaded.
@@ -163,8 +163,8 @@ Replace rules substitute matching substrings before comparison.
 
 Commands:
 
-reconify run config.yaml
-reconify run config.yaml --out report.json
+reconlify run config.yaml
+reconlify run config.yaml --out report.json
 
 Exit codes:
 

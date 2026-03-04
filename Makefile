@@ -23,8 +23,8 @@ test: ## Run unit tests
 e2e: ## Run E2E tests
 	poetry run pytest -m e2e -q
 
-run: ## Run reconify (usage: make run ARGS="run config.yaml")
-	poetry run reconify $(ARGS)
+run: ## Run reconlify (usage: make run ARGS="run config.yaml")
+	poetry run reconlify $(ARGS)
 
 clean: ## Remove build artifacts and caches
 	rm -rf dist .pytest_cache .ruff_cache

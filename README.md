@@ -1,23 +1,23 @@
-# Reconify
+# Reconlify
 
-Reconify is a local-first CLI for semantic data reconciliation.
+Reconlify is a local-first CLI for semantic data reconciliation.
 
 It compares datasets using declarative YAML rules and produces deterministic
 JSON reports with machine-readable exit codes. All processing happens
 locally — no data leaves your machine.
 
-Reconify is designed for:
+Reconlify is designed for:
 
 - ETL pipeline validation
 - Data migration verification
 - CI/CD dataset checks
 - Reconciliation audits
 
-## Why Reconify?
+## Why Reconlify?
 
 Traditional diff tools show textual differences.
 
-Reconify performs **semantic reconciliation**:
+Reconlify performs **semantic reconciliation**:
 
 - Key-based row comparison for tabular data
 - Column-level mismatch detection
@@ -26,29 +26,29 @@ Reconify performs **semantic reconciliation**:
 
 ## Architecture
 
-Reconify consists of two projects:
+Reconlify consists of two projects:
 
-- **reconify-cli** — The deterministic reconciliation engine. It can be used
+- **reconlify-cli** — The deterministic reconciliation engine. It can be used
   standalone in scripts, CI/CD pipelines, and automation.
-- **reconify-ui** — A desktop workbench that calls the CLI and visualizes
+- **reconlify-ui** — A desktop workbench that calls the CLI and visualizes
   reports in a graphical interface.
 
-This repository contains `reconify-cli`.
+This repository contains `reconlify-cli`.
 
 ## Installation
 
 Requires **Python 3.11+**.
 
 ```bash
-pip install reconify-cli
+pip install reconlify-cli
 ```
 
 For development, use [Poetry](https://python-poetry.org/):
 
 ```bash
-git clone <repo-url> && cd reconify-cli
+git clone <repo-url> && cd reconlify-cli
 make install          # runs: poetry install
-reconify --help
+reconlify --help
 ```
 
 ## Quick Start
@@ -72,10 +72,10 @@ compare:
 Run it:
 
 ```bash
-reconify run recon.yaml
+reconlify run recon.yaml
 # Output report written to: report.json
 
-reconify run recon.yaml --out report.json
+reconlify run recon.yaml --out report.json
 echo $?   # 0 = match, 1 = differences, 2 = error
 ```
 
@@ -92,11 +92,11 @@ normalize:
 ```
 
 ```bash
-reconify run text_recon.yaml
+reconlify run text_recon.yaml
 # Output report written to: report.json
 ```
 
-In `unordered_lines` mode, line order is ignored — Reconify compares
+In `unordered_lines` mode, line order is ignored — Reconlify compares
 occurrence counts of each distinct line across both files.
 In `line_by_line` mode (default), lines are compared positionally.
 
@@ -107,7 +107,7 @@ See the `examples/` directory for minimal and full-featured config samples.
 Running:
 
 ```bash
-reconify run recon.yaml --out report.json
+reconlify run recon.yaml --out report.json
 ```
 
 produces a structured JSON report:
@@ -128,8 +128,8 @@ The full report schema is documented in [REPORT_SCHEMA_v1.md](docs/REPORT_SCHEMA
 ## CLI Usage
 
 ```bash
-reconify run <config.yaml>                # default output: report.json
-reconify run <config.yaml> --out out.json # custom output path
+reconlify run <config.yaml>                # default output: report.json
+reconlify run <config.yaml> --out out.json # custom output path
 ```
 
 ### Options
@@ -185,7 +185,7 @@ Every run produces a JSON report with a consistent structure:
 # GitHub Actions example
 - name: Reconcile data
   run: |
-    reconify run recon.yaml --out report.json
+    reconlify run recon.yaml --out report.json
     exit_code=$?
     if [ $exit_code -eq 2 ]; then
       echo "::error::Reconciliation failed with error"
@@ -202,7 +202,7 @@ Every run produces a JSON report with a consistent structure:
     path: report.json
 ```
 
-Reconify intentionally returns exit code **1** when differences are found.
+Reconlify intentionally returns exit code **1** when differences are found.
 This allows CI pipelines to decide whether differences should fail the build
 or simply produce a warning.
 
@@ -234,8 +234,8 @@ See [docs/PERF_TESTING.md](docs/PERF_TESTING.md) for details and baseline result
 
 - [YAML Config Schema](docs/YAML_SCHEMA_v1.md) — Full reference for all configuration options
 - [Report Schema](docs/REPORT_SCHEMA_v1.md) — Complete specification of the JSON report format
-- [User Guide](docs/RECONIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
-- [Product Requirements](docs/RECONIFY_CLI_PRD_v1.md) — V1 scope and design rationale
+- [User Guide](docs/RECONLIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
+- [Product Requirements](docs/RECONLIFY_CLI_PRD_v1.md) — V1 scope and design rationale
 - [Performance Testing](docs/PERF_TESTING.md) — Benchmark methodology and baseline results
 
 ## Changelog

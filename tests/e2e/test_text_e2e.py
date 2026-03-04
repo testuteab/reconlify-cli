@@ -1,4 +1,4 @@
-"""End-to-end tests for the reconify text engine CLI.
+"""End-to-end tests for the reconlify text engine CLI.
 
 These tests invoke the CLI as a subprocess, write reports to .artifacts/e2e/,
 and validate the JSON output against expected values.

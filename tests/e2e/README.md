@@ -1,6 +1,6 @@
 # E2E Tests
 
-End-to-end tests that invoke the `reconify` CLI as a subprocess and validate
+End-to-end tests that invoke the `reconlify` CLI as a subprocess and validate
 the JSON report output.
 
 ## Running
@@ -18,7 +18,7 @@ tests/e2e/
 ├── test_text_e2e.py     # test functions
 └── cases/
     └── <case_id>/
-        ├── config.yaml  # reconify YAML config (source/target use relative paths)
+        ├── config.yaml  # reconlify YAML config (source/target use relative paths)
         ├── source.txt   # source fixture (may be absent for runtime-generated cases)
         └── target.txt   # target fixture
 ```

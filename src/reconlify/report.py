@@ -1,4 +1,4 @@
-"""Report building and config hashing for Reconify V1."""
+"""Report building and config hashing for Reconlify V1."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 from typing import Literal
 
-from reconify.models import (
+from reconlify.models import (
     ReconError,
     ReconReport,
     ReportCsvInfo,

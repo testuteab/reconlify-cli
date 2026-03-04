@@ -1,4 +1,4 @@
-"""Pydantic v2 models for Reconify V1 config and report schemas."""
+"""Pydantic v2 models for Reconlify V1 config and report schemas."""
 
 from __future__ import annotations
 

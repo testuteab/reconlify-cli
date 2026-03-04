@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run reconify benchmarks on generated perf fixtures.
+"""Run reconlify benchmarks on generated perf fixtures.
 
 Iterates over case directories under ``.artifacts/perf/``, executes
-``reconify run`` via subprocess, and collects timing + report-size metrics.
+``reconlify run`` via subprocess, and collects timing + report-size metrics.
 
 Usage::
 
@@ -36,7 +36,7 @@ def _find_cases(root: Path, filt: str | None) -> list[Path]:
 
 
 def _run_case(case_dir: Path) -> dict:
-    """Execute reconify on a single case and return metrics."""
+    """Execute reconlify on a single case and return metrics."""
     config = (case_dir / "config.yaml").resolve()
     report = (case_dir / "report.json").resolve()
     report.unlink(missing_ok=True)
@@ -45,7 +45,7 @@ def _run_case(case_dir: Path) -> dict:
     ru_before = resource.getrusage(resource.RUSAGE_CHILDREN)
 
     result = subprocess.run(
-        [sys.executable, "-m", "reconify", "run", str(config), "--out", str(report)],
+        [sys.executable, "-m", "reconlify", "run", str(config), "--out", str(report)],
         capture_output=True,
         text=True,
         cwd=str(case_dir.resolve()),
@@ -129,7 +129,7 @@ def _print_table(results: list[dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run reconify perf benchmarks")
+    parser = argparse.ArgumentParser(description="Run reconlify perf benchmarks")
     parser.add_argument("--filter", type=str, default=None, help="Filter cases by substring")
     parser.add_argument("--root", type=str, default=str(PERF_ROOT), help="Perf fixtures root")
     args = parser.parse_args()

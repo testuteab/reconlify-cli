@@ -1,4 +1,4 @@
-# Reconify YAML Schema – V1
+# Reconlify YAML Schema – V1
 
 Root field:
 

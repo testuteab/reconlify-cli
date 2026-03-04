@@ -46,12 +46,12 @@ def perf_fixtures() -> Path:
 
 
 def _run_case(case_dir: Path) -> tuple[int, dict]:
-    """Run reconify on a case directory and return (exit_code, report)."""
+    """Run reconlify on a case directory and return (exit_code, report)."""
     config = case_dir / "config.yaml"
     report_path = case_dir / "report.json"
     report_path.unlink(missing_ok=True)
     result = subprocess.run(
-        [sys.executable, "-m", "reconify", "run", str(config), "--out", str(report_path)],
+        [sys.executable, "-m", "reconlify", "run", str(config), "--out", str(report_path)],
         capture_output=True,
         text=True,
         cwd=str(case_dir),

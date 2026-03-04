@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 from pydantic import TypeAdapter, ValidationError
 
-from reconify.models import ReconConfig, TabularConfig, TextConfig
+from reconlify.models import ReconConfig, TabularConfig, TextConfig
 
 _adapter = TypeAdapter(ReconConfig)
 

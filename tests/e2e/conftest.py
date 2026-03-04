@@ -72,7 +72,7 @@ def _run_case(
     cmd = [
         sys.executable,
         "-m",
-        "reconify",
+        "reconlify",
         "run",
         str(resolved_config),
         "--out",

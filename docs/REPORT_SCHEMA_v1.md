@@ -1,4 +1,4 @@
-# Reconify Report Schema – V1
+# Reconlify Report Schema – V1
 
 Output file: `report.json`
 
@@ -34,7 +34,7 @@ Exit codes:
 | `type`         | string            | always    | `"tabular"` or `"text"` — matches the config `type`. |
 | `version`      | string            | always    | Schema version. Currently `"1.3"`. |
 | `generated_at` | string            | always    | ISO-8601 UTC timestamp of when the report was created. Not deterministic; do not use for equality checks. |
-| `config_hash`  | string            | always    | **Best-effort** SHA-256 hex digest. When the config is successfully parsed, this is the hash of the canonical JSON-serialized Pydantic model — two runs with identical configs produce the same hash. On error reports where config was not fully parsed, this falls back to the hash of the raw YAML string, or `""` if the file could not be read at all. Do not rely on hash stability across Reconify versions. |
+| `config_hash`  | string            | always    | **Best-effort** SHA-256 hex digest. When the config is successfully parsed, this is the hash of the canonical JSON-serialized Pydantic model — two runs with identical configs produce the same hash. On error reports where config was not fully parsed, this falls back to the hash of the raw YAML string, or `""` if the file could not be read at all. Do not rely on hash stability across Reconlify versions. |
 | `summary`      | object            | always    | Aggregate counts. Structure differs by `type`. Zeroed out when `error` is present. |
 | `details`      | object            | always    | Metadata about what was compared and how. Structure differs by `type`. Contains defaults when `error` is present. |
 | `samples`      | list or dict      | always    | Sample diff entries. Type-dependent: list for text, dict for tabular. Empty when `error` is present. |
@@ -1210,7 +1210,7 @@ filtering/processing fields in `details`.
 
 - **NULL-safe key matching:** Tabular engine now uses `IS NOT DISTINCT FROM`
   for key joins, correctly matching rows where key columns contain NULL values.
-  Missing-row detection now checks `_reconify_line_number IS NULL` on the
+  Missing-row detection now checks `_reconlify_line_number IS NULL` on the
   outer-joined side — a stable indicator that is always non-null for real rows —
   instead of checking key columns which are ambiguous when keys can be NULL.
 - **`column_stats` always in `details`:** `details.column_stats` is now always

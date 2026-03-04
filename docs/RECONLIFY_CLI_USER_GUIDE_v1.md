@@ -1,14 +1,14 @@
-# Reconify User Guide — V1
+# Reconlify User Guide — V1
 
 ## 1. Introduction
 
-Reconify is a local-first, rule-based data reconciliation CLI tool. It
+Reconlify is a local-first, rule-based data reconciliation CLI tool. It
 compares two files — structured (CSV/TSV) or unstructured (text) — using a
 declarative YAML configuration, and produces a deterministic JSON report.
 
 All processing happens locally. No data is uploaded or transmitted.
 
-Reconify targets data engineers, QA engineers, ETL developers, migration
+Reconlify targets data engineers, QA engineers, ETL developers, migration
 consultants, and CI/CD validation pipelines.
 
 ### Core Concepts
@@ -30,7 +30,7 @@ consultants, and CI/CD validation pipelines.
 Requires Python 3.11 or later.
 
 ```bash
-pip install reconify-cli
+pip install reconlify-cli
 ```
 
 Or with Poetry (for development):
@@ -42,14 +42,14 @@ poetry install
 Verify the installation:
 
 ```bash
-reconify run --help
+reconlify run --help
 ```
 
 ---
 
 ## 3. Configuration Overview
 
-Every Reconify comparison starts with a YAML config file. The top-level
+Every Reconlify comparison starts with a YAML config file. The top-level
 `type` field selects the engine:
 
 ```yaml
@@ -58,14 +58,14 @@ source: path/to/source_file
 target: path/to/target_file
 ```
 
-File paths are resolved relative to the working directory where `reconify`
+File paths are resolved relative to the working directory where `reconlify`
 is invoked.
 
 ### Running a comparison
 
 ```bash
-reconify run config.yaml
-reconify run config.yaml --out results.json
+reconlify run config.yaml
+reconlify run config.yaml --out results.json
 ```
 
 The JSON report is written to `report.json` by default. Use `--out` to
@@ -886,7 +886,7 @@ positions.
 ### Basic pattern
 
 ```bash
-reconify run recon.yaml --out report.json
+reconlify run recon.yaml --out report.json
 exit_code=$?
 
 if [ $exit_code -eq 2 ]; then
@@ -916,7 +916,7 @@ Run multiple configs in sequence and aggregate exit codes:
 ```bash
 max_exit=0
 for config in configs/*.yaml; do
-  reconify run "$config" --out "reports/$(basename "$config" .yaml).json"
+  reconlify run "$config" --out "reports/$(basename "$config" .yaml).json"
   code=$?
   if [ $code -gt $max_exit ]; then max_exit=$code; fi
 done

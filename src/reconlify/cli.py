@@ -1,4 +1,4 @@
-"""Reconify CLI entrypoint."""
+"""Reconlify CLI entrypoint."""
 
 from __future__ import annotations
 
@@ -9,21 +9,21 @@ from typing import Optional
 
 import typer
 
-from reconify.config_loader import ConfigLoadError, load_config_with_raw
-from reconify.models import (
+from reconlify.config_loader import ConfigLoadError, load_config_with_raw
+from reconlify.models import (
     ReconError,
     TabularConfig,
     TextConfig,
     UnorderedStats,
 )
-from reconify.report import build_error_report, build_report, config_hash, write_report
+from reconlify.report import build_error_report, build_report, config_hash, write_report
 
-app = typer.Typer(help="Reconify - rule-based data reconciliation.", invoke_without_command=True)
+app = typer.Typer(help="Reconlify - rule-based data reconciliation.", invoke_without_command=True)
 
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"reconify {version('reconify-cli')}")
+        typer.echo(f"reconlify {version('reconlify-cli')}")
         raise typer.Exit()
 
 
@@ -38,7 +38,7 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """Reconify - rule-based data reconciliation."""
+    """Reconlify - rule-based data reconciliation."""
 
 
 @app.command()
@@ -122,7 +122,7 @@ def _run_text(
     debug_report: bool = False,
 ) -> None:
     """Execute text engine comparison and write report."""
-    from reconify.text_engine import compare_text
+    from reconlify.text_engine import compare_text
 
     result, exit_code = compare_text(
         cfg,
@@ -171,8 +171,8 @@ def _run_text(
 
 def _run_tabular(cfg: TabularConfig, out_path: str) -> None:
     """Execute tabular engine comparison and write report."""
-    from reconify.models import ReportCsvInfo, TabularDetails, TabularFiltersApplied, TabularSummary
-    from reconify.tabular_engine import compare_tabular
+    from reconlify.models import ReportCsvInfo, TabularDetails, TabularFiltersApplied, TabularSummary
+    from reconlify.tabular_engine import compare_tabular
 
     result, exit_code = compare_tabular(cfg)
 

@@ -6,9 +6,9 @@ import json
 
 from typer.testing import CliRunner
 
-from reconify.cli import app
-from reconify.models import TextConfig
-from reconify.text_engine import compare_text
+from reconlify.cli import app
+from reconlify.models import TextConfig
+from reconlify.text_engine import compare_text
 
 runner = CliRunner()
 

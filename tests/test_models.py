@@ -3,7 +3,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from reconify.models import ReconConfig, TabularConfig, TextConfig
+from reconlify.models import ReconConfig, TabularConfig, TextConfig
 
 adapter = TypeAdapter(ReconConfig)
 

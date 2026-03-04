@@ -1,4 +1,4 @@
-Reconify-cli V1 Context
+Reconlify-cli V1 Context
 
 This project follows strict V1 boundaries defined in:
 - docs/PRD_v1.md

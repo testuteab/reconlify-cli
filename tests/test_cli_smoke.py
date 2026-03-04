@@ -1,10 +1,10 @@
-"""Smoke tests for the Reconify CLI."""
+"""Smoke tests for the Reconlify CLI."""
 
 import json
 
 from typer.testing import CliRunner
 
-from reconify.cli import app
+from reconlify.cli import app
 
 runner = CliRunner()
 

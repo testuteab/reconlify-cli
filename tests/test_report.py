@@ -2,8 +2,8 @@
 
 import json
 
-from reconify.models import TabularConfig, TextConfig
-from reconify.report import build_report, config_hash
+from reconlify.models import TabularConfig, TextConfig
+from reconlify.report import build_report, config_hash
 
 
 def test_tabular_report_structure() -> None:
@@ -45,7 +45,7 @@ def test_text_rules_applied_starts_at_zero() -> None:
 
 
 def test_build_report_text_rules_applied_starts_at_zero() -> None:
-    from reconify.models import TextNormalize
+    from reconlify.models import TextNormalize
 
     cfg = TextConfig(
         type="text",
@@ -108,7 +108,7 @@ def test_tabular_report_csv_in_json() -> None:
 
 def test_text_report_no_csv_field() -> None:
     """Text reports must not include details.csv."""
-    from reconify.report import write_report
+    from reconlify.report import write_report
 
     cfg = TextConfig(type="text", source="a.txt", target="b.txt")
     report = build_report(cfg)
@@ -118,7 +118,7 @@ def test_text_report_no_csv_field() -> None:
 
 def test_tabular_details_csv_optional_backward_compat() -> None:
     """TabularDetails with csv=None should parse fine (backward compatibility)."""
-    from reconify.models import TabularDetails
+    from reconlify.models import TabularDetails
 
     # Simulate an older report that has no csv field
     details = TabularDetails(format="csv", keys=["id"])
@@ -127,7 +127,7 @@ def test_tabular_details_csv_optional_backward_compat() -> None:
 
 def test_write_report_tabular_includes_csv(tmp_path) -> None:
     """write_report must include details.csv in the JSON for tabular reports."""
-    from reconify.report import write_report
+    from reconlify.report import write_report
 
     cfg = TabularConfig(type="tabular", source="a.csv", target="b.csv", keys=["id"])
     report = build_report(cfg)
@@ -142,7 +142,7 @@ def test_write_report_tabular_includes_csv(tmp_path) -> None:
 
 def test_write_report_text_omits_csv(tmp_path) -> None:
     """write_report must omit details.csv from the JSON for text reports."""
-    from reconify.report import write_report
+    from reconlify.report import write_report
 
     cfg = TextConfig(type="text", source="a.txt", target="b.txt")
     report = build_report(cfg)
@@ -154,7 +154,7 @@ def test_write_report_text_omits_csv(tmp_path) -> None:
 
 def test_text_details_audit_samples_default_empty() -> None:
     """New dropped_samples and replacement_samples fields default to []."""
-    from reconify.models import TextDetails
+    from reconlify.models import TextDetails
 
     details = TextDetails()
     assert details.dropped_samples == []
@@ -163,7 +163,7 @@ def test_text_details_audit_samples_default_empty() -> None:
 
 def test_text_details_with_audit_samples() -> None:
     """TextDetails accepts and validates the new sample types."""
-    from reconify.models import (
+    from reconlify.models import (
         TextDetails,
         TextDroppedSample,
         TextReplacementRuleApplied,

@@ -7,8 +7,8 @@ import tempfile
 
 import pytest
 
-from reconify.models import RowFilterRule, TabularConfig
-from reconify.tabular_engine import compare_tabular
+from reconlify.models import RowFilterRule, TabularConfig
+from reconlify.tabular_engine import compare_tabular
 
 
 def _write_csv(content: str) -> str:
@@ -892,7 +892,7 @@ def test_row_filters_multiple_rules_and():
 
 def test_row_filter_builder_deterministic():
     """SQL builder should produce consistent output."""
-    from reconify.tabular_engine import _build_row_filter_predicate
+    from reconlify.tabular_engine import _build_row_filter_predicate
 
     rules = [
         RowFilterRule(column="status", op="equals", value="CANCELLED"),
@@ -911,7 +911,7 @@ def test_row_filter_builder_deterministic():
 
 def test_row_filter_builder_uses_param_binding():
     """Values should be passed as params, not interpolated into SQL."""
-    from reconify.tabular_engine import _build_row_filter_predicate
+    from reconlify.tabular_engine import _build_row_filter_predicate
 
     rules = [
         RowFilterRule(column="name", op="equals", value="O'Brien"),
@@ -1277,8 +1277,8 @@ def test_normalization_empty_pipeline_rejected():
 
 
 def test_norm_step_map():
-    from reconify.models import NormStep
-    from reconify.tabular_engine import _build_norm_step_sql
+    from reconlify.models import NormStep
+    from reconlify.tabular_engine import _build_norm_step_sql
 
     step = NormStep(op="map", args=["status", "A", "Active", "I", "Inactive"])
     sql = _build_norm_step_sql(step, None, {"status"})
@@ -1288,8 +1288,8 @@ def test_norm_step_map():
 
 
 def test_norm_step_substr():
-    from reconify.models import NormStep
-    from reconify.tabular_engine import _build_norm_step_sql
+    from reconlify.models import NormStep
+    from reconlify.tabular_engine import _build_norm_step_sql
 
     step = NormStep(op="substr", args=["name", 1, 3])
     sql = _build_norm_step_sql(step, None, {"name"})
@@ -1297,8 +1297,8 @@ def test_norm_step_substr():
 
 
 def test_norm_step_round():
-    from reconify.models import NormStep
-    from reconify.tabular_engine import _build_norm_step_sql
+    from reconlify.models import NormStep
+    from reconlify.tabular_engine import _build_norm_step_sql
 
     step = NormStep(op="round", args=["amount", 2])
     sql = _build_norm_step_sql(step, None, {"amount"})
@@ -1307,8 +1307,8 @@ def test_norm_step_round():
 
 
 def test_norm_step_coalesce():
-    from reconify.models import NormStep
-    from reconify.tabular_engine import _build_norm_step_sql
+    from reconlify.models import NormStep
+    from reconlify.tabular_engine import _build_norm_step_sql
 
     step = NormStep(op="coalesce", args=["a", "b", "default"])
     sql = _build_norm_step_sql(step, None, {"a", "b"})
@@ -1316,8 +1316,8 @@ def test_norm_step_coalesce():
 
 
 def test_norm_step_with_prev_expr():
-    from reconify.models import NormStep
-    from reconify.tabular_engine import _build_norm_step_sql
+    from reconlify.models import NormStep
+    from reconlify.tabular_engine import _build_norm_step_sql
 
     step = NormStep(op="upper", args=[])
     sql = _build_norm_step_sql(step, '"name"', {"name"})

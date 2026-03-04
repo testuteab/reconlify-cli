@@ -34,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Per-column mismatch statistics (`column_stats`) in tabular reports.
 - Aggregated samples (`samples_agg`) for unordered text mode.
 - YAML-based configuration with Pydantic v2 validation.
-- CLI with `reconify run` command, `--out`, `--include-line-numbers`, `--max-line-numbers`, and `--debug-report` options.
+- CLI with `reconlify run` command, `--out`, `--include-line-numbers`, `--max-line-numbers`, and `--debug-report` options.
 - Exit codes: 0 (no differences), 1 (differences found), 2 (error).
 - E2E test suite runnable via `make e2e`.
 - Documentation: YAML schema reference, report schema reference, user guide, and PRD.
@@ -45,5 +45,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notes
 
-- This is the first public 1.0 release of Reconify.
+- This is the first public 1.0 release of Reconlify.
 - The CLI interface and report schema are intended to be stable, but minor breaking changes may occur before 1.1 as real-world usage informs refinements.

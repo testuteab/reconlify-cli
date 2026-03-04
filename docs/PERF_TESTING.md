@@ -1,6 +1,6 @@
 # Performance Testing
 
-Reconify ships with a suite of deterministic performance benchmarks that
+Reconlify ships with a suite of deterministic performance benchmarks that
 stress-test both the tabular and text engines at scale. Test data is
 generated on demand into `.artifacts/perf/` (gitignored) and never committed.
 
@@ -81,7 +81,7 @@ The benchmark runner (`scripts/perf/run_bench.py`) prints a table with:
 | Column | Meaning |
 |--------|---------|
 | Exit | CLI exit code (0 = no diffs, 1 = diffs, 2 = error) |
-| Time(s) | Wall-clock seconds for the `reconify run` subprocess |
+| Time(s) | Wall-clock seconds for the `reconlify run` subprocess |
 | Report | Size of the generated `report.json` |
 | RSS delta | Approximate peak-memory delta (best-effort via `resource` module) |
 | Summary | Key counts from the report (rows, mismatches, diffs, etc.) |

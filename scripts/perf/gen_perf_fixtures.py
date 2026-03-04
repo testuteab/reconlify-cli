@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic performance-test fixtures for reconify-cli.
+"""Generate deterministic performance-test fixtures for reconlify-cli.
 
 All env-var knobs have sensible defaults. Output lands under
 ``.artifacts/perf/`` (gitignored) by default.

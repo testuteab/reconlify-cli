@@ -1,4 +1,4 @@
-"""Text comparison engine for Reconify V1."""
+"""Text comparison engine for Reconlify V1."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections import Counter
 from itertools import zip_longest
 from typing import Any
 
-from reconify.models import TextConfig, TextMode
+from reconlify.models import TextConfig, TextMode
 
 _SENTINEL = object()
 _WS_RE = re.compile(r"\s+")
