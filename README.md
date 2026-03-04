@@ -81,6 +81,23 @@ missing_in_target:    0
 - CI/CD pipeline friendly
 - Fully local execution — no network calls
 
+## Performance
+
+Reconlify uses DuckDB-backed tabular processing, streaming text comparison, and a local-first architecture. It processes large datasets locally without requiring a database or external service.
+
+| Dataset | Rows / Lines | Mode | Time |
+|---------|-------------|------|------|
+| CSV reconciliation (exact match) | 200k rows | tabular | ~2 s |
+| CSV reconciliation (high mismatch) | 200k rows | tabular | ~12 s |
+| Log comparison (positional diffs) | 500k lines | line_by_line | ~3 s |
+| Log comparison (unordered) | 250k lines | unordered_lines | < 1 s |
+
+Benchmarks were executed on a MacBook (Apple Silicon / Python 3.11) with default fixture settings.
+
+Performance depends on dataset structure, rule complexity, and system hardware.
+
+Full benchmark methodology and results: [PERF_TESTING.md](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md)
+
 ## Installation
 
 Requires **Python 3.11+**.
