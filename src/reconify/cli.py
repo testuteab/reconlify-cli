@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import traceback
+from importlib.metadata import version
 from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -19,8 +21,23 @@ from reconify.report import build_error_report, build_report, config_hash, write
 app = typer.Typer(help="Reconify - rule-based data reconciliation.", invoke_without_command=True)
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"reconify {version('reconify-cli')}")
+        raise typer.Exit()
+
+
 @app.callback()
-def main() -> None:
+def main(
+    _version: Optional[bool] = typer.Option(  # noqa: UP007
+        None,
+        "--version",
+        "-V",
+        help="Show version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
     """Reconify - rule-based data reconciliation."""
 
 
