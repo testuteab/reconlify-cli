@@ -1,39 +1,85 @@
-# Reconlify
+# Reconlify CLI
 
-Reconlify is a local-first CLI for semantic data reconciliation.
+**Semantic data reconciliation for the command line.**
 
-It compares datasets using declarative YAML rules and produces deterministic
-JSON reports with machine-readable exit codes. All processing happens
-locally — no data leaves your machine.
+Validate structured datasets using declarative YAML rules and produce deterministic JSON reconciliation reports suitable for CI/CD pipelines.
 
-Reconlify is designed for:
+Fully local. No data leaves your machine.
 
-- ETL pipeline validation
+Typical use cases:
+
+- ETL validation
 - Data migration verification
-- CI/CD dataset checks
-- Reconciliation audits
+- Financial transaction reconciliation
+- CI pipeline dataset checks
+- Log comparison with normalization rules
 
-## Why Reconlify?
+## Quick Example
 
-Traditional diff tools show textual differences.
+**source.csv**
 
-Reconlify performs **semantic reconciliation**:
+```
+txn_id,amount
+1,100
+2,200
+```
 
-- Key-based row comparison for tabular data
-- Column-level mismatch detection
-- Normalization and transformation rules
-- Deterministic machine-readable JSON reports
+**target.csv**
 
-## Architecture
+```
+txn_id,amount
+1,100
+2,210
+```
 
-Reconlify consists of two projects:
+**config.yaml**
 
-- **reconlify-cli** — The deterministic reconciliation engine. It can be used
-  standalone in scripts, CI/CD pipelines, and automation.
-- **reconlify-ui** — A desktop workbench that calls the CLI and visualizes
-  reports in a graphical interface.
+```yaml
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - txn_id
+```
 
-This repository contains `reconlify-cli`.
+```bash
+reconlify run config.yaml
+```
+
+Exit code: **1** (differences found). Report highlights:
+
+```
+rows_with_mismatches: 1
+missing_in_source:    0
+missing_in_target:    0
+```
+
+## Why Reconlify
+
+| | `diff` / `fc` | Excel (VLOOKUP) | Beyond Compare | **Reconlify CLI** |
+|---|---|---|---|---|
+| Comparison model | Line-by-line text | Manual formulas | Visual file diff | **Key-based semantic matching** |
+| Key-based matching | No | Manual | No | **Declarative keys** |
+| Missing-row detection | No concept of rows | Manual | Manual inspection | **Automatic, both directions** |
+| Column-level comparison | No | Manual per-cell | Limited | **Automatic with include/exclude** |
+| Normalization rules | No | No | Limited | **Trim, case, nulls, regex, virtual columns** |
+| Deterministic JSON output | No | No | No | **Yes** |
+| CI/CD integration | Barely | No | No | **Exit codes 0/1/2 + JSON report** |
+| Local execution | Yes | Yes | Yes | **Yes — zero network calls** |
+
+## Features
+
+- Key-based dataset reconciliation (single or composite keys)
+- Automatic missing-row detection (both directions)
+- Column-level mismatch detection with include/exclude control
+- Numeric tolerance support (per-column absolute tolerance)
+- Normalization rules (trim, case-insensitive, null handling, regex, virtual columns)
+- Row filters and exclusions
+- Deterministic JSON reconciliation reports
+- Machine-readable exit codes (0 / 1 / 2)
+- Two engines: **tabular** (CSV/TSV) and **text** (line-by-line / unordered)
+- CI/CD pipeline friendly
+- Fully local execution — no network calls
 
 ## Installation
 
@@ -43,87 +89,21 @@ Requires **Python 3.11+**.
 pip install reconlify-cli
 ```
 
-For development, use [Poetry](https://python-poetry.org/):
+Or with [pipx](https://pipx.pypa.io/) for isolated installs:
 
 ```bash
-git clone <repo-url> && cd reconlify-cli
+pipx install reconlify-cli
+```
+
+> **Package name on PyPI:** `reconlify-cli`
+
+For development:
+
+```bash
+git clone https://github.com/testuteab/reconlify-cli.git && cd reconlify-cli
 make install          # runs: poetry install
 reconlify --help
 ```
-
-## Quick Start
-
-### Tabular (CSV/TSV)
-
-Create a config file `recon.yaml`:
-
-```yaml
-type: tabular
-source: source.csv
-target: target.csv
-keys:
-  - id
-compare:
-  include_columns:
-    - amount
-    - currency
-```
-
-Run it:
-
-```bash
-reconlify run recon.yaml
-# Output report written to: report.json
-
-reconlify run recon.yaml --out report.json
-echo $?   # 0 = match, 1 = differences, 2 = error
-```
-
-### Text (line_by_line / unordered_lines)
-
-```yaml
-type: text
-source: expected.log
-target: actual.log
-mode: unordered_lines
-normalize:
-  trim_lines: true
-  ignore_blank_lines: true
-```
-
-```bash
-reconlify run text_recon.yaml
-# Output report written to: report.json
-```
-
-In `unordered_lines` mode, line order is ignored — Reconlify compares
-occurrence counts of each distinct line across both files.
-In `line_by_line` mode (default), lines are compared positionally.
-
-See the `examples/` directory for minimal and full-featured config samples.
-
-## Example Output
-
-Running:
-
-```bash
-reconlify run recon.yaml --out report.json
-```
-
-produces a structured JSON report:
-
-```json
-{
-  "type": "tabular",
-  "summary": {
-    "missing_in_target": 3,
-    "missing_in_source": 1,
-    "rows_with_mismatches": 5
-  }
-}
-```
-
-The full report schema is documented in [REPORT_SCHEMA_v1.md](docs/REPORT_SCHEMA_v1.md).
 
 ## CLI Usage
 
@@ -138,7 +118,7 @@ reconlify run <config.yaml> --out out.json # custom output path
 |--------|---------|-------------|
 | `--out PATH` | `report.json` | Output path for the JSON report |
 | `--include-line-numbers` / `--no-include-line-numbers` | on | Include original line numbers in text report samples |
-| `--max-line-numbers N` | `0` (unlimited) | Max line numbers per distinct line in unordered mode. 0 = unlimited |
+| `--max-line-numbers N` | `0` (unlimited) | Max line numbers per distinct line in unordered mode |
 | `--debug-report` | off | Include processed line numbers in text report samples |
 
 ### Exit Codes
@@ -148,6 +128,135 @@ reconlify run <config.yaml> --out out.json # custom output path
 | 0 | No differences found |
 | 1 | Differences found |
 | 2 | Error (config validation, file not found, runtime failure) |
+
+### Version
+
+```bash
+reconlify --version
+# reconlify 0.1.0
+```
+
+Reconlify follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
+
+## Real-World Example: Accounting Transaction Reconciliation
+
+A finance team exports transactions from two systems (ERP and bank ledger) and needs to reconcile them nightly. Here's how Reconlify handles it.
+
+### 1. Create sample data
+
+```bash
+cat <<'EOF' > source.csv
+txn_id,booking_date,account,amount,currency,counterparty,status,memo
+TXN-001,2026-01-15,4100,1500.00,USD,Acme Corp,BOOKED,Invoice 9201
+TXN-002,2026-01-16,4100,320.50,EUR,Globex Inc,BOOKED,Wire transfer
+TXN-003,2026-01-17,4200,75.00,USD,Jane Doe,BOOKED,Expense report
+TXN-004,2026-01-18,4100,10000.00,USD,Initech,CANCELLED,Reversed
+TXN-005,2026-01-19,4300,249.99,USD,Umbrella Ltd,BOOKED,Subscription
+TXN-006,2026-01-20,4100,,USD,Soylent Corp,BOOKED,Pending allocation
+EOF
+
+cat <<'EOF' > target.csv
+txn_id,booking_date,account,amount,currency,counterparty,status,memo
+TXN-001,2026-01-15,4100,1500.00,USD,  acme corp  ,BOOKED,Invoice 9201
+TXN-002,2026-01-16,4100,320.75,EUR,Globex Inc,BOOKED,Wire transfer
+TXN-003,2026-01-17,4200,75.00,USD,Jane Doe,BOOKED,Expense report
+TXN-005,2026-01-19,4300,249.99,USD,Umbrella Ltd,BOOKED,Subscription
+TXN-006,2026-01-20,4100,NULL,USD,Soylent Corp,BOOKED,Pending allocation
+TXN-007,2026-01-21,4100,430.00,USD,Wayne Ent,BOOKED,New deposit
+EOF
+```
+
+What's different between the two files:
+
+| Scenario | Row | Detail |
+|---|---|---|
+| Matches after normalization | TXN-001 | `counterparty` has extra spaces + lowercase in target — should match with trim + case rules |
+| Value mismatch | TXN-002 | `amount` is `320.50` vs `320.75` (exceeds tolerance) |
+| Exact match | TXN-003 | Identical |
+| Filtered out | TXN-004 | Status `CANCELLED` — excluded by row filter |
+| Exact match | TXN-005 | Identical |
+| NULL normalization | TXN-006 | Source has blank `amount`, target has `NULL` string — should match |
+| Missing in source | TXN-007 | Exists only in target |
+
+### 2. Create the reconciliation config
+
+```bash
+cat <<'EOF' > recon.yaml
+type: tabular
+source: source.csv
+target: target.csv
+
+keys:
+  - txn_id
+
+csv:
+  delimiter: ","
+  header: true
+  encoding: utf-8
+
+compare:
+  trim_whitespace: true
+  case_insensitive: true
+  normalize_nulls: true
+  exclude_columns:
+    - memo
+
+filters:
+  row_filters:
+    - column: status
+      op: not_equals
+      value: CANCELLED
+EOF
+```
+
+Key config choices:
+
+- **`keys: [txn_id]`** — match rows by transaction ID
+- **`trim_whitespace` + `case_insensitive`** — ignore formatting noise
+- **`normalize_nulls`** — treat blank, `NULL`, and `null` as equivalent
+- **`exclude_columns: [memo]`** — skip free-text fields
+- **`row_filters`** — drop `CANCELLED` transactions before comparison
+
+### 3. Run the reconciliation
+
+```bash
+reconlify run recon.yaml --out report.json
+echo $?
+```
+
+**Expected exit code: `1`** (differences found).
+
+The report will contain:
+
+- **missing_in_target: 0** — TXN-004 was filtered out, so not counted
+- **missing_in_source: 1** — TXN-007 exists only in target
+- **rows_with_mismatches: 1** — TXN-002 has an `amount` mismatch (`320.50` vs `320.75`)
+
+TXN-001 and TXN-006 match cleanly thanks to normalization rules.
+
+The report is written to `report.json`. It is **deterministic** — identical inputs and config always produce identical output (except the `generated_at` timestamp).
+
+## Text Engine
+
+Reconlify also compares text files line-by-line or as unordered line sets:
+
+```yaml
+type: text
+source: expected.log
+target: actual.log
+mode: unordered_lines
+normalize:
+  trim_lines: true
+  ignore_blank_lines: true
+```
+
+```bash
+reconlify run text_recon.yaml
+```
+
+In `unordered_lines` mode, line order is ignored — Reconlify compares occurrence counts of each distinct line. In `line_by_line` mode (default), lines are compared positionally.
+
+See the `examples/` directory for config samples.
 
 ## Engines
 
@@ -179,10 +288,25 @@ Every run produces a JSON report with a consistent structure:
 | `error` | Present only on exit code 2. Machine-readable `code`, human-readable `message`, and `details` |
 | `warnings` | Optional list of warning strings (e.g. large line-number arrays in unordered mode) |
 
-## CI/CD Integration
+## CI Usage
+
+```bash
+reconlify run recon.yaml --out report.json
+rc=$?
+
+if [ $rc -eq 2 ]; then
+  echo "ERROR: config or runtime failure" >&2
+  exit 1
+elif [ $rc -eq 1 ]; then
+  echo "WARN: differences found — see report.json" >&2
+fi
+```
+
+Exit code **1** means differences were found — your pipeline decides whether that's a warning or a failure. Exit code **2** is always an error.
+
+### GitHub Actions
 
 ```yaml
-# GitHub Actions example
 - name: Reconcile data
   run: |
     reconlify run recon.yaml --out report.json
@@ -202,12 +326,22 @@ Every run produces a JSON report with a consistent structure:
     path: report.json
 ```
 
-Reconlify intentionally returns exit code **1** when differences are found.
-This allows CI pipelines to decide whether differences should fail the build
-or simply produce a warning.
+## Documentation
 
-Exit code **2** indicates a configuration or runtime error and should
-normally fail the pipeline.
+- [User Guide](https://github.com/testuteab/reconlify-cli/blob/main/docs/RECONLIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
+- [YAML Config Schema](https://github.com/testuteab/reconlify-cli/blob/main/docs/YAML_SCHEMA_v1.md) — Full reference for all configuration options
+- [Report Schema](https://github.com/testuteab/reconlify-cli/blob/main/docs/REPORT_SCHEMA_v1.md) — Complete specification of the JSON report format
+- [Performance Testing](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md) — Benchmark methodology and baseline results
+
+## Reconlify Desktop
+
+Reconlify Desktop is a graphical interface for Reconlify CLI. It allows users to:
+
+- Visually build YAML reconciliation configs
+- Run reconciliations without using the terminal
+- Inspect reconciliation reports interactively
+
+Reconlify CLI remains the core reconciliation engine.
 
 ## Development
 
@@ -228,19 +362,15 @@ make perf-smoke    # lightweight perf smoke tests
 make perf-clean    # remove generated fixtures
 ```
 
-See [docs/PERF_TESTING.md](docs/PERF_TESTING.md) for details and baseline results.
-
-## Documentation
-
-- [YAML Config Schema](docs/YAML_SCHEMA_v1.md) — Full reference for all configuration options
-- [Report Schema](docs/REPORT_SCHEMA_v1.md) — Complete specification of the JSON report format
-- [User Guide](docs/RECONLIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
-- [Product Requirements](docs/RECONLIFY_CLI_PRD_v1.md) — V1 scope and design rationale
-- [Performance Testing](docs/PERF_TESTING.md) — Benchmark methodology and baseline results
+See [Performance Testing](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md) for details and baseline results.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+See [CHANGELOG.md](https://github.com/testuteab/reconlify-cli/blob/main/CHANGELOG.md) for release history.
+
+---
+
+Reconlify sits between simple file diff tools and heavy enterprise reconciliation systems, providing a deterministic, developer-friendly workflow for validating structured data locally.
 
 ## License
 
