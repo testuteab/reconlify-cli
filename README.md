@@ -214,15 +214,16 @@ csv:
 compare:
   trim_whitespace: true
   case_insensitive: true
-  normalize_nulls: true
+  normalize_nulls: ["", "NULL", "null"]
   exclude_columns:
     - memo
 
 filters:
   row_filters:
-    - column: status
-      op: not_equals
-      value: CANCELLED
+    both:
+      - column: status
+        op: equals
+        value: CANCELLED
 EOF
 ```
 
