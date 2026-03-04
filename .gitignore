@@ -24,3 +24,7 @@ report.json
 
 # Test artifacts
 .artifacts/
+
+.claude
+CLAUDE_CONTEXT.md
+
