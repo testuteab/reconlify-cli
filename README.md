@@ -54,18 +54,20 @@ missing_in_source:    0
 missing_in_target:    0
 ```
 
-## Why Reconlify
+## How Reconlify Compares
 
-| | `diff` / `fc` | Excel (VLOOKUP) | Beyond Compare | **Reconlify CLI** |
+| Capability | `diff` / `difflib` | `csvdiff` | Beyond Compare | **Reconlify** |
 |---|---|---|---|---|
-| Comparison model | Line-by-line text | Manual formulas | Visual file diff | **Key-based semantic matching** |
-| Key-based matching | No | Manual | No | **Declarative keys** |
-| Missing-row detection | No concept of rows | Manual | Manual inspection | **Automatic, both directions** |
-| Column-level comparison | No | Manual per-cell | Limited | **Automatic with include/exclude** |
-| Normalization rules | No | No | Limited | **Trim, case, nulls, regex, virtual columns** |
-| Deterministic JSON output | No | No | No | **Yes** |
-| CI/CD integration | Barely | No | No | **Exit codes 0/1/2 + JSON report** |
-| Local execution | Yes | Yes | Yes | **Yes — zero network calls** |
+| Understands tabular datasets | No | Yes | Partial | **Yes** |
+| Key-based row matching | No | Yes | No | **Yes** |
+| Detects missing rows | No | Yes | Partial | **Yes** |
+| Rule-based normalization | No | No | No | **Yes** |
+| Numeric tolerance | No | No | No | **Yes** |
+| Regex replacements | No | No | No | **Yes** |
+| Noise filtering | No | No | Manual | **Yes** |
+| Structured JSON report | No | No | No | **Yes** |
+| Automation / CI friendly | Yes | Partial | No | **Yes** |
+| Local-first | Yes | Yes | Yes | **Yes** |
 
 ## Features
 
