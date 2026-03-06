@@ -58,11 +58,11 @@ missing_in_target:    0
 
 | Capability | `diff` / `difflib` | `csvdiff` | Beyond Compare | **Reconlify** |
 |---|---|---|---|---|
-| Understands tabular datasets | No | Yes | Partial | **Yes** |
-| Key-based row matching | No | Yes | No | **Yes** |
+| Understands tabular datasets | No | Yes | Yes | **Yes** |
+| Key-based row matching | No | Yes | Yes | **Yes** |
 | Detects missing rows | No | Yes | Partial | **Yes** |
 | Rule-based normalization | No | No | No | **Yes** |
-| Numeric tolerance | No | No | No | **Yes** |
+| Numeric tolerance | No | No | Yes | **Yes** |
 | Regex replacements | No | No | No | **Yes** |
 | Noise filtering | No | No | Manual | **Yes** |
 | Structured JSON report | No | No | No | **Yes** |
