@@ -1,0 +1,18 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - trade_id
+column_mapping:
+  trade_id: id
+  full_name: customer_full_name
+  amount: total_amount
+normalization:
+  full_name:
+    - op: concat
+      args: [first_name, " ", last_name]
+    - op: trim
+compare:
+  include_columns:
+    - full_name
+    - amount

@@ -235,7 +235,62 @@ redundant but harmless.
 
 Both sides are extracted with the same pattern before comparison.
 
-## 8. Source-Side Normalization
+## 8. Column Mapping
+
+Compare semantically equivalent datasets even when source and target use
+different column names.
+
+When source and target files represent the same data but use different
+column headers, use `column_mapping` to declare the correspondence:
+
+```yaml
+type: tabular
+source: trades_erp.csv
+target: trades_ledger.csv
+
+keys:
+  - trade_id
+
+column_mapping:
+  trade_id: id
+  amount: total_amount
+  customer_name: client_name
+```
+
+Key design principle: the **source-side / logical column name** is the
+canonical identifier. All config fields — `keys`, `compare`,
+`tolerance`, `string_rules`, `ignore_columns` — use logical names.
+`column_mapping` only affects how target columns are resolved.
+
+If a column has no mapping, the target column defaults to the same name.
+
+### Interactions with other features
+
+- **Keys:** `keys: [trade_id]` joins `source.trade_id` against
+  `target.id` when `column_mapping.trade_id = id`.
+- **Tolerance / string_rules:** `tolerance.amount: 0.05` applies to
+  `source.amount` vs `target.total_amount`.
+- **Normalization:** a generated source column can map to a target column:
+
+```yaml
+normalization:
+  full_name:
+    - op: concat
+      args: [first_name, " ", last_name]
+
+column_mapping:
+  full_name: customer_full_name
+```
+
+### Validation
+
+- Mapped target columns must exist in the target file.
+- No two logical columns may map to the same target column.
+- Empty keys or values are rejected.
+
+---
+
+## 9. Source-Side Normalization
 
 Normalization creates virtual columns on the source side by transforming
 existing columns. If the target has a column with the same name as a
@@ -305,7 +360,7 @@ Arguments in `args` are resolved as follows:
 - Arguments cannot reference other generated (normalization) columns.
 - Pipelines are linear — no branching or nesting.
 
-## 9. Filters
+## 10. Filters
 
 Filters remove rows from the comparison. Excluded rows are tracked in the
 report with sample data for audit purposes.
@@ -382,7 +437,7 @@ rules:
 
 Both steps happen before duplicate-key validation and comparison.
 
-## 10. CSV Options
+## 11. CSV Options
 
 ```yaml
 csv:
@@ -394,7 +449,7 @@ csv:
 All values are read as strings (`all_varchar = true`). Numeric
 comparisons happen via tolerance rules, which cast to DOUBLE internally.
 
-## 11. Output Control
+## 12. Output Control
 
 ```yaml
 output:
@@ -408,7 +463,7 @@ for large-scale comparisons where you only need counts).
 Setting `include_column_stats: false` produces an empty `column_stats`
 object.
 
-## 12. Tabular Report Structure
+## 13. Tabular Report Structure
 
 The tabular engine produces a report with this structure:
 
@@ -457,7 +512,7 @@ The `summary` counts reflect the dataset *after* filtering. The `details`
 section lets you trace how many rows were read vs. how many participated
 in the comparison.
 
-## 13. Performance Notes
+## 14. Performance Notes
 
 The tabular engine uses DuckDB for in-memory SQL execution. This provides:
 
@@ -478,7 +533,7 @@ roughly 60 seconds on a modern laptop.
 The text engine compares two text files line by line. It supports two modes
 and extensive normalization options.
 
-## 14. Comparison Modes
+## 15. Comparison Modes
 
 ### line_by_line (default)
 
@@ -509,7 +564,7 @@ mode: unordered_lines
 A line appearing 3 times in source and 1 time in target contributes 2 to
 `different_lines`.
 
-## 15. Text Normalization
+## 16. Text Normalization
 
 Normalization is applied to each line through a 7-step pipeline in this
 exact order:
@@ -537,7 +592,7 @@ The pipeline order matters. For example, `trim_lines` and
 containing only whitespace will be trimmed to `""` and then dropped if
 `ignore_blank_lines` is enabled.
 
-## 16. Regex Rules
+## 17. Regex Rules
 
 ### replace_regex
 
@@ -567,7 +622,7 @@ drop_lines_regex:
 
 A line is dropped if it matches *any* pattern in the list.
 
-## 17. Text Report Structure
+## 18. Text Report Structure
 
 ### line_by_line report
 
@@ -679,7 +734,7 @@ This section covers the report structure shared by both engines. For the
 full specification with audit notes and JSON examples, see
 [REPORT_SCHEMA_v1.md](REPORT_SCHEMA_v1.md).
 
-## 18. Root Object
+## 19. Root Object
 
 ```json
 {
@@ -707,7 +762,7 @@ full specification with audit notes and JSON examples, see
 | `samples_agg` | Optional | Text `unordered_lines` mode only. Omitted when absent. |
 | `error` | Optional | Present only on exit code 2. |
 
-## 19. Summary Fields
+## 20. Summary Fields
 
 ### Tabular
 
@@ -730,7 +785,7 @@ full specification with audit notes and JSON examples, see
 | `different_lines` | Number of line-level differences |
 | `comparison_time_seconds` | Wall-clock seconds |
 
-## 20. Details Fields
+## 21. Details Fields
 
 ### Tabular
 
@@ -738,7 +793,8 @@ full specification with audit notes and JSON examples, see
 |-------|-------------|
 | `format` | Always `"csv"` in V1 |
 | `keys` | Key column names used for matching |
-| `compared_columns` | Sorted list of columns compared |
+| `compared_columns` | Sorted list of columns compared (logical names) |
+| `column_mapping` | Effective column mappings `{ logical: target }`. Omitted when empty. |
 | `read_rows_source` | Raw rows read before filtering |
 | `read_rows_target` | Raw rows read before filtering |
 | `filters_applied` | Filter breakdown (exclude_keys + row_filters) |
@@ -756,7 +812,7 @@ full specification with audit notes and JSON examples, see
 | `rules_applied` | `drop_lines_count` and `replace_rules_count` (combined totals) |
 | `unordered_stats` | Present only in `unordered_lines` mode |
 
-## 21. Samples
+## 22. Samples
 
 ### Tabular samples (dict with four categories)
 
@@ -780,7 +836,7 @@ content and original line numbers.
 **unordered_lines:** `samples` is always `[]`. Aggregated entries are in
 `samples_agg` with occurrence counts and line number lists.
 
-## 22. Error Object
+## 23. Error Object
 
 Present only on exit code 2. When `error` is present, all `summary` fields
 are zero and `samples` is empty.
@@ -801,8 +857,9 @@ are zero and `samples` is empty.
 | `RUNTIME_ERROR` | File not found, I/O failure, unexpected exception |
 | `DUPLICATE_KEYS` | Non-unique keys after filtering (tabular only) |
 | `INVALID_ROW_FILTERS` | Row filter references a missing column (tabular only) |
+| `INVALID_COLUMN_MAPPING` | Mapped target column missing or creates collision (tabular only) |
 
-## 23. Exit Codes
+## 24. Exit Codes
 
 | Code | Meaning | Report state |
 |------|---------|--------------|
@@ -814,7 +871,7 @@ are zero and `samples` is empty.
 
 # Part IV — Best Practices
 
-## 24. Designing Configs
+## 25. Designing Configs
 
 **Start minimal.** Begin with just `type`, `source`, `target`, and `keys`.
 Run the comparison and review the report. Add tolerance, string rules, and
@@ -838,7 +895,7 @@ care about a few columns, a whitelist is clearer than a blacklist.
 **Store configs in version control.** Since configs are deterministic,
 storing them alongside your data pipeline code ensures reproducibility.
 
-## 25. Using Tolerance Safely
+## 26. Using Tolerance Safely
 
 **Understand the semantics.** Tolerance uses *absolute* comparison:
 `abs(source - target) <= tolerance`. There is no relative/percentage mode.
@@ -856,7 +913,7 @@ but means you should not rely on tolerance for mixed-type columns.
 numeric cast of the raw value. String rules (trim, case_insensitive) apply
 to the string representation. They do not interact.
 
-## 26. Debugging Mismatches
+## 27. Debugging Mismatches
 
 **Check `compared_columns` first.** The report's `details.compared_columns`
 tells you exactly which columns were compared. If a column is missing,
@@ -881,7 +938,7 @@ numbers in samples. This shows the position in the normalized stream,
 which helps when `drop_lines_regex` or `ignore_blank_lines` shift line
 positions.
 
-## 27. Integrating into CI
+## 28. Integrating into CI
 
 ### Basic pattern
 

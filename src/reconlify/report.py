@@ -132,6 +132,8 @@ def write_report(report: ReconReport, path: str) -> None:
             del details["normalize"]
         if "csv" in details and details["csv"] is None:
             del details["csv"]
+        if "column_mapping" in details and not details["column_mapping"]:
+            del details["column_mapping"]
         # Omit row_filters from filters_applied when not enabled
         fa = details.get("filters_applied")
         if isinstance(fa, dict) and "row_filters" in fa and fa["row_filters"] is None:

@@ -1322,3 +1322,263 @@ def test_norm_step_with_prev_expr():
     step = NormStep(op="upper", args=[])
     sql = _build_norm_step_sql(step, '"name"', {"name"})
     assert sql == 'UPPER("name")'
+
+
+# ---------------------------------------------------------------------------
+# Column mapping
+# ---------------------------------------------------------------------------
+
+
+def test_column_mapping_basic_key_join():
+    """Mapped key: source.trade_id joins to target.id."""
+    src = _write_csv("trade_id,amount\n1,100\n2,200\n")
+    tgt = _write_csv("id,amount\n1,100\n2,200\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["trade_id"],
+        column_mapping={"trade_id": "id"},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+    assert result["summary"]["missing_in_target"] == 0
+    assert result["summary"]["missing_in_source"] == 0
+    assert result["details"]["keys"] == ["trade_id"]
+
+
+def test_column_mapping_nonkey_comparison():
+    """Mapped non-key column: source.amount vs target.total_amount."""
+    src = _write_csv("id,amount\n1,100\n2,200\n")
+    tgt = _write_csv("id,total_amount\n1,100\n2,999\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount"},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+    assert result["details"]["compared_columns"] == ["amount"]
+    # Mismatch sample should use logical column name
+    mismatches = result["samples"]["value_mismatches"]
+    assert len(mismatches) == 1
+    m = mismatches[0]
+    assert m["key"]["id"] == "2"
+    assert "amount" in m["columns"]
+    assert m["columns"]["amount"]["source"] == "200"
+    assert m["columns"]["amount"]["target"] == "999"
+
+
+def test_column_mapping_tolerance_on_mapped_column():
+    """Tolerance on mapped numeric column: amount -> total_amount."""
+    src = _write_csv("id,amount\n1,100.00\n2,200.00\n")
+    tgt = _write_csv("id,total_amount\n1,100.02\n2,200.10\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount"},
+        tolerance={"amount": 0.05},
+    )
+    result, exit_code = compare_tabular(cfg)
+    # id=1: diff=0.02 <= 0.05 (match), id=2: diff=0.10 > 0.05 (mismatch)
+    assert exit_code == 1
+    assert result["summary"]["rows_with_mismatches"] == 1
+
+
+def test_column_mapping_string_rules_on_mapped_column():
+    """String rules on mapped column: customer_name -> client_name with trim+case."""
+    src = _write_csv("id,customer_name\n1,Alice\n2,Bob\n")
+    tgt = _write_csv("id,client_name\n1,  ALICE  \n2,bob\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"customer_name": "client_name"},
+        string_rules={"customer_name": ["trim", "case_insensitive"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+
+
+def test_column_mapping_normalization_plus_mapping():
+    """Source-side normalization + mapping: generated full_name -> target customer_full_name."""
+    src = _write_csv("id,first_name,last_name\n1,John,Doe\n2,Jane,Smith\n")
+    tgt = _write_csv("id,customer_full_name\n1,John Doe\n2,Jane Smith\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"full_name": "customer_full_name"},
+        normalization={
+            "full_name": [
+                {"op": "concat", "args": ["first_name", " ", "last_name"]},
+            ],
+        },
+        compare={"include_columns": ["full_name"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert "full_name" in result["details"]["compared_columns"]
+
+
+def test_column_mapping_include_columns_logical_names():
+    """include_columns operates in logical namespace."""
+    src = _write_csv("id,amount,status\n1,100,active\n")
+    tgt = _write_csv("id,total_amount,status\n1,100,active\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount"},
+        compare={"include_columns": ["amount"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["details"]["compared_columns"] == ["amount"]
+
+
+def test_column_mapping_exclude_columns_logical_names():
+    """exclude_columns operates in logical namespace."""
+    src = _write_csv("id,amount,status\n1,100,active\n")
+    tgt = _write_csv("id,total_amount,state\n1,100,active\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount", "status": "state"},
+        compare={"exclude_columns": ["status"]},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["details"]["compared_columns"] == ["amount"]
+
+
+def test_column_mapping_ignore_columns_logical_names():
+    """ignore_columns operates in logical namespace."""
+    src = _write_csv("id,amount,status\n1,100,active\n")
+    tgt = _write_csv("id,total_amount,state\n1,100,active\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount", "status": "state"},
+        ignore_columns=["status"],
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["details"]["compared_columns"] == ["amount"]
+
+
+def test_column_mapping_missing_target_column_error():
+    """Error when mapped target column does not exist."""
+    src = _write_csv("id,amount\n1,100\n")
+    tgt = _write_csv("id,value\n1,100\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount"},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 2
+    assert "INVALID_COLUMN_MAPPING" in result["error"]["code"]
+    assert "total_amount" in result["error"]["message"]
+
+
+def test_column_mapping_report_details():
+    """Report details should include effective column_mapping."""
+    src = _write_csv("id,amount\n1,100\n")
+    tgt = _write_csv("id,total_amount\n1,100\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["id"],
+        column_mapping={"amount": "total_amount"},
+    )
+    result, _ = compare_tabular(cfg)
+    assert result["details"]["column_mapping"] == {"amount": "total_amount"}
+
+
+def test_column_mapping_missing_rows_with_mapped_keys():
+    """Missing rows should be detected correctly with mapped keys."""
+    src = _write_csv("trade_id,amount\n1,100\n2,200\n3,300\n")
+    tgt = _write_csv("id,amount\n1,100\n2,200\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["trade_id"],
+        column_mapping={"trade_id": "id"},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["missing_in_target"] == 1
+    # Missing sample should use logical key name
+    missing = result["samples"]["missing_in_target"]
+    assert len(missing) == 1
+    assert missing[0]["key"] == {"trade_id": "3"}
+
+
+def test_column_mapping_missing_in_source_with_mapped_keys():
+    """Missing in source with mapped keys."""
+    src = _write_csv("trade_id,amount\n1,100\n")
+    tgt = _write_csv("id,amount\n1,100\n2,200\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["trade_id"],
+        column_mapping={"trade_id": "id"},
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 1
+    assert result["summary"]["missing_in_source"] == 1
+    missing = result["samples"]["missing_in_source"]
+    assert len(missing) == 1
+    assert missing[0]["key"] == {"trade_id": "2"}
+
+
+def test_column_mapping_no_mapping_backward_compat():
+    """Configs without column_mapping should work unchanged."""
+    src = _write_csv("id,name,value\n1,Alice,100\n2,Bob,200\n")
+    tgt = _write_csv("id,name,value\n1,Alice,100\n2,Bob,200\n")
+    cfg = TabularConfig(type="tabular", source=src, target=tgt, keys=["id"])
+    assert cfg.column_mapping == {}
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert "column_mapping" not in result["details"] or result["details"]["column_mapping"] == {}
+
+
+def test_column_mapping_multiple_mapped_columns():
+    """Multiple columns mapped simultaneously."""
+    src = _write_csv("trade_id,amount,customer_name\n1,100,Alice\n")
+    tgt = _write_csv("id,total_amount,client_name\n1,100,Alice\n")
+    cfg = TabularConfig(
+        type="tabular",
+        source=src,
+        target=tgt,
+        keys=["trade_id"],
+        column_mapping={
+            "trade_id": "id",
+            "amount": "total_amount",
+            "customer_name": "client_name",
+        },
+    )
+    result, exit_code = compare_tabular(cfg)
+    assert exit_code == 0
+    assert result["summary"]["rows_with_mismatches"] == 0
+    assert sorted(result["details"]["compared_columns"]) == ["amount", "customer_name"]

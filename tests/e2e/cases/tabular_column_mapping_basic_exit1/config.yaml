@@ -1,0 +1,13 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - trade_id
+column_mapping:
+  trade_id: id
+  amount: total_amount
+  customer_name: client_name
+compare:
+  include_columns:
+    - amount
+    - customer_name

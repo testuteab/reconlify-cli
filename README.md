@@ -76,7 +76,10 @@ It performs **semantic reconciliation** for structured data files.
 | Works with exported files | Yes | Yes | Yes | Yes | No | **Yes** |
 | Database integration | No | No | No | No | **Yes** | Planned |
 | CI/CD automation ready | Yes | Partial | No | No | Yes | **Yes** |
+| Schema-aware column mapping | No | No | Manual | Partial | Partial | **Yes** |
 | Local-first execution | Yes | Yes | Yes | Yes | No | **Yes** |
+
+Reconlify can compare semantically equivalent datasets even when source and target use different column names — a common requirement in migration validation and cross-system reconciliation.
 
 Reconlify focuses on **semantic reconciliation for structured files**
 such as CSV exports, logs, and tabular datasets.
@@ -95,6 +98,7 @@ This makes it particularly useful for:
 ## Features
 
 - Key-based dataset reconciliation (single or composite keys)
+- Schema-aware column mapping for files with different column names
 - Automatic missing-row detection (both directions)
 - Column-level mismatch detection with include/exclude control
 - Numeric tolerance support (per-column absolute tolerance)
@@ -306,6 +310,7 @@ See the `examples/` directory for config samples.
 ### Tabular Engine
 
 - **Key-based reconciliation** — Single or composite keys. Detects missing rows on either side and cell-level value mismatches.
+- **Column mapping** — Map source column names to different target column names (`column_mapping: {amount: total_amount}`).
 - **Column control** — Include or exclude specific columns from comparison.
 - **Numeric tolerance** — Absolute tolerance per column (e.g. `amount: 0.01`).
 - **String rules** — Per-column normalization: `trim`, `case_insensitive`, `contains`, `regex_extract`.

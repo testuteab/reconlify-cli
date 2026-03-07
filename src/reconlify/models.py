@@ -132,6 +132,7 @@ class TabularConfig(BaseModel):
     source: str
     target: str
     keys: Annotated[list[str], Field(min_length=1)]
+    column_mapping: dict[str, str] = Field(default_factory=dict)
     compare: TabularCompare = Field(default_factory=TabularCompare)
     filters: TabularFilters = Field(default_factory=TabularFilters)
     csv: TabularCsvOptions = Field(default_factory=TabularCsvOptions)
@@ -152,6 +153,29 @@ class TabularConfig(BaseModel):
                     f"filters.exclude_keys[{i}] has keys {sorted(entry_keys)} "
                     f"but expected exactly {sorted(key_set)}"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _check_column_mapping(self) -> TabularConfig:
+        for k, v in self.column_mapping.items():
+            if not k.strip():
+                raise ValueError("column_mapping: keys must not be empty strings")
+            if not v.strip():
+                raise ValueError(
+                    f"column_mapping[{k!r}]: target column name must not be empty"
+                )
+        # Reject duplicate target column names
+        values = list(self.column_mapping.values())
+        seen: set[str] = set()
+        dupes: set[str] = set()
+        for v in values:
+            if v in seen:
+                dupes.add(v)
+            seen.add(v)
+        if dupes:
+            raise ValueError(
+                f"column_mapping has duplicate target column names: {sorted(dupes)}"
+            )
         return self
 
     @model_validator(mode="after")
@@ -261,6 +285,7 @@ class TabularDetails(BaseModel):
     format: str = "csv"
     keys: list[str] = Field(default_factory=list)
     compared_columns: list[str] = Field(default_factory=list)
+    column_mapping: dict[str, str] = Field(default_factory=dict)
     read_rows_source: int = 0
     read_rows_target: int = 0
     filters_applied: TabularFiltersApplied = Field(default_factory=TabularFiltersApplied)
