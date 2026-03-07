@@ -1,0 +1,10 @@
+type: tabular
+source: source.csv
+target: target.csv
+keys:
+  - trade_id
+column_mapping:
+  trade_id: id
+  amount: total_amount
+tolerance:
+  amount: 10
