@@ -16,6 +16,84 @@ target: string
 keys:
   - column_name          # required, at least 1
 
+## column_mapping (optional)
+
+column_mapping:
+  source_column_name: target_column_name
+
+Maps source-side (logical) column names to target-side physical column names.
+Use this when source and target datasets have different column names for the
+same data.
+
+Semantics:
+- Key = logical/source-side column name
+- Value = target-side physical column name
+- If a column is not in column_mapping, the target column defaults to the
+  same name as the source column
+- All other config fields (keys, compare, tolerance, string_rules,
+  ignore_columns, normalization) use logical/source-side column names
+- column_mapping resolves target-side lookups only
+
+Validation:
+- Keys and values must not be empty strings
+- Values (target column names) must be unique — no two logical columns
+  may map to the same target column
+- Mapped target columns must exist in the target file (runtime validation)
+
+Interactions:
+- `keys`: expressed as logical/source-side names; the engine joins
+  `source.logical_key` against `target.mapped_key`
+- `compare.include_columns` / `exclude_columns`: use logical names
+- `ignore_columns`: uses logical names
+- `tolerance`: keyed by logical names
+- `string_rules`: keyed by logical names
+- `normalization`: source-side only; a generated column may map to an
+  existing target column via column_mapping
+
+### Example
+
+```yaml
+type: tabular
+source: trades_source.csv
+target: trades_target.csv
+
+keys:
+  - trade_id
+
+column_mapping:
+  trade_id: id
+  amount: total_amount
+  customer_name: client_name
+  full_name: customer_full_name
+
+compare:
+  include_columns:
+    - amount
+    - customer_name
+    - full_name
+
+tolerance:
+  amount: 0.05
+
+string_rules:
+  customer_name:
+    - trim
+    - case_insensitive
+
+normalization:
+  full_name:
+    - op: concat
+      args: [first_name, " ", last_name]
+    - op: trim
+```
+
+In this config:
+- `trade_id` (source) joins against `id` (target)
+- `amount` (source) compares against `total_amount` (target) with tolerance 0.05
+- `customer_name` (source) compares against `client_name` (target) with trim + case rules
+- `full_name` is generated on source side via normalization and compared against
+  `customer_full_name` (target)
+
 ## compare (optional)
 
 compare:

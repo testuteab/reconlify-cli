@@ -118,15 +118,35 @@ def _do_comparison(
     # 1b) PROJECTION - keep only columns needed downstream
     # ---------------------------------------------------------------
     keys = config.keys
+    col_map = config.column_mapping
+    reverse_map = {v: k for k, v in col_map.items()}
+
     src_raw_cols = set(_get_column_names(con, "source_raw"))
     tgt_raw_cols = set(_get_column_names(con, "target_raw"))
 
-    # Columns common to both sides (potential comparison + sample columns)
-    common_cols = (src_raw_cols & tgt_raw_cols) - {"_reconlify_line_number"}
+    # Validate column_mapping target columns exist
+    for logical, tgt_physical in col_map.items():
+        if tgt_physical not in tgt_raw_cols:
+            elapsed = time.monotonic() - start
+            return _error_result(
+                config,
+                elapsed,
+                "INVALID_COLUMN_MAPPING",
+                f"column_mapping[{logical!r}]: target column {tgt_physical!r} "
+                f"does not exist in target file",
+            )
 
     key_set = set(keys)
 
-    # Normalization: input columns (source-side) + output columns (target-side)
+    # Matchable logical columns: source columns whose target equivalent exists
+    matchable_logical: set[str] = set()
+    for src_col in src_raw_cols - {"_reconlify_line_number"}:
+        tgt_col = col_map.get(src_col, src_col)
+        if tgt_col in tgt_raw_cols:
+            matchable_logical.add(src_col)
+    common_cols = matchable_logical
+
+    # Normalization: input columns (source-side) + output columns
     norm_input_cols: set[str] = set()
     norm_output_cols = set(config.normalization.keys())
     for _col_name, pipeline in config.normalization.items():
@@ -148,17 +168,54 @@ def _do_comparison(
         | norm_input_cols
         | (rf_cols & src_raw_cols)
     )
-    tgt_needed = (
-        {"_reconlify_line_number"}
-        | key_set
-        | common_cols
-        | (norm_output_cols & tgt_raw_cols)
-        | (rf_cols & tgt_raw_cols)
-    )
 
-    for side, needed in (("source", src_needed), ("target", tgt_needed)):
-        proj_cols = ", ".join(f'"{c}"' for c in sorted(needed))
-        con.execute(f"CREATE TABLE {side}_proj AS SELECT {proj_cols} FROM {side}_raw")
+    # Target needed columns (physical names)
+    tgt_needed_physical: set[str] = {"_reconlify_line_number"}
+    for c in key_set | common_cols:
+        tgt_needed_physical.add(col_map.get(c, c))
+    for c in norm_output_cols:
+        tgt_phys = col_map.get(c, c)
+        if tgt_phys in tgt_raw_cols:
+            tgt_needed_physical.add(tgt_phys)
+    for c in rf_cols:
+        tgt_phys = col_map.get(c, c)
+        if tgt_phys in tgt_raw_cols:
+            tgt_needed_physical.add(tgt_phys)
+
+    # Source projection
+    src_proj_cols = ", ".join(f'"{c}"' for c in sorted(src_needed))
+    con.execute(f"CREATE TABLE source_proj AS SELECT {src_proj_cols} FROM source_raw")
+
+    # Target projection (alias mapped columns to logical names)
+    tgt_proj_parts = []
+    tgt_result_names = []
+    for c in sorted(tgt_needed_physical):
+        logical = reverse_map.get(c, c)
+        tgt_result_names.append(logical)
+        if logical != c:
+            tgt_proj_parts.append(f'"{c}" AS "{logical}"')
+        else:
+            tgt_proj_parts.append(f'"{c}"')
+
+    # Check for aliasing collisions
+    if len(tgt_result_names) != len(set(tgt_result_names)):
+        seen_names: set[str] = set()
+        dupe_names: set[str] = set()
+        for n in tgt_result_names:
+            if n in seen_names:
+                dupe_names.add(n)
+            seen_names.add(n)
+        elapsed = time.monotonic() - start
+        return _error_result(
+            config,
+            elapsed,
+            "INVALID_COLUMN_MAPPING",
+            f"column_mapping creates column name collisions in target: {sorted(dupe_names)}",
+        )
+
+    con.execute(
+        f"CREATE TABLE target_proj AS SELECT {', '.join(tgt_proj_parts)} FROM target_raw"
+    )
 
     # ---------------------------------------------------------------
     # 2) APPLY exclude_keys FILTER
@@ -504,6 +561,7 @@ def _do_comparison(
             "format": config.format,
             "keys": list(keys),
             "compared_columns": compared_columns,
+            "column_mapping": {k: v for k, v in col_map.items() if k != v},
             "read_rows_source": source_total,
             "read_rows_target": target_total,
             "filters_applied": _build_filters_applied(

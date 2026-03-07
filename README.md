@@ -95,6 +95,7 @@ This makes it particularly useful for:
 ## Features
 
 - Key-based dataset reconciliation (single or composite keys)
+- Column mapping — compare semantically equivalent datasets even when source and target use different column names
 - Automatic missing-row detection (both directions)
 - Column-level mismatch detection with include/exclude control
 - Numeric tolerance support (per-column absolute tolerance)
@@ -306,6 +307,7 @@ See the `examples/` directory for config samples.
 ### Tabular Engine
 
 - **Key-based reconciliation** — Single or composite keys. Detects missing rows on either side and cell-level value mismatches.
+- **Column mapping** — Map source column names to different target column names (`column_mapping: {amount: total_amount}`).
 - **Column control** — Include or exclude specific columns from comparison.
 - **Numeric tolerance** — Absolute tolerance per column (e.g. `amount: 0.01`).
 - **String rules** — Per-column normalization: `trim`, `case_insensitive`, `contains`, `regex_extract`.

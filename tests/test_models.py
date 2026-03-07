@@ -291,3 +291,72 @@ def test_unknown_type_rejected() -> None:
                 "target": "b",
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Tabular - column_mapping validation
+# ---------------------------------------------------------------------------
+
+
+def test_column_mapping_valid() -> None:
+    cfg = adapter.validate_python(
+        {
+            "type": "tabular",
+            "source": "a.csv",
+            "target": "b.csv",
+            "keys": ["trade_id"],
+            "column_mapping": {"trade_id": "id", "amount": "total_amount"},
+        }
+    )
+    assert cfg.column_mapping == {"trade_id": "id", "amount": "total_amount"}
+
+
+def test_column_mapping_empty_key_rejected() -> None:
+    with pytest.raises(ValidationError, match="must not be empty"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "column_mapping": {"": "target_col"},
+            }
+        )
+
+
+def test_column_mapping_empty_value_rejected() -> None:
+    with pytest.raises(ValidationError, match="must not be empty"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "column_mapping": {"amount": ""},
+            }
+        )
+
+
+def test_column_mapping_duplicate_target_rejected() -> None:
+    with pytest.raises(ValidationError, match="duplicate target"):
+        adapter.validate_python(
+            {
+                "type": "tabular",
+                "source": "a.csv",
+                "target": "b.csv",
+                "keys": ["id"],
+                "column_mapping": {"amount": "value", "price": "value"},
+            }
+        )
+
+
+def test_column_mapping_defaults_empty() -> None:
+    cfg = adapter.validate_python(
+        {
+            "type": "tabular",
+            "source": "a.csv",
+            "target": "b.csv",
+            "keys": ["id"],
+        }
+    )
+    assert cfg.column_mapping == {}
