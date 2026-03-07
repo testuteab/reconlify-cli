@@ -1,3 +1,5 @@
+[![Home Page](https://img.shields.io/badge/Website-reconlify.com-blue)](https://reconlify.com/)
+
 # Reconlify CLI
 
 **Semantic data reconciliation for the command line.**
@@ -55,6 +57,10 @@ missing_in_target:    0
 ```
 
 ## How Reconlify Compares
+
+Reconlify is **not just another diff tool**.
+
+It performs **semantic reconciliation** for structured data files. 
 
 | Capability | `diff` / `difflib` | `csvdiff` | Beyond Compare | **Reconlify** |
 |---|---|---|---|---|
@@ -355,7 +361,7 @@ Exit code **1** means differences were found — your pipeline decides whether t
 
 ## Reconlify Desktop
 
-Reconlify Desktop is a graphical interface for Reconlify CLI. It allows users to:
+[Reconlify Desktop](https://reconlify.com/) is a graphical interface for Reconlify CLI. It allows users to:
 
 - Visually build YAML reconciliation configs
 - Run reconciliations without using the terminal

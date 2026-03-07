@@ -30,7 +30,7 @@ dependencies = [
 reconlify = "reconlify.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/testuteab/reconlify-cli"
+Homepage = "https://reconlify.com/"
 Repository = "https://github.com/testuteab/reconlify-cli"
 "Bug Tracker" = "https://github.com/testuteab/reconlify-cli/issues"
 Changelog = "https://github.com/testuteab/reconlify-cli/blob/main/CHANGELOG.md"
