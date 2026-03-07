@@ -62,18 +62,35 @@ Reconlify is **not just another diff tool**.
 
 It performs **semantic reconciliation** for structured data files. 
 
-| Capability | `diff` / `difflib` | `csvdiff` | Beyond Compare | **Reconlify** |
-|---|---|---|---|---|
-| Understands tabular datasets | No | Yes | Yes | **Yes** |
-| Key-based row matching | No | Yes | Yes | **Yes** |
-| Detects missing rows | No | Yes | Partial | **Yes** |
-| Rule-based normalization | No | No | No | **Yes** |
-| Numeric tolerance | No | No | Yes | **Yes** |
-| Regex replacements | No | No | No | **Yes** |
-| Noise filtering | No | No | Manual | **Yes** |
-| Structured JSON report | No | No | No | **Yes** |
-| Automation / CI friendly | Yes | Partial | No | **Yes** |
-| Local-first | Yes | Yes | Yes | **Yes** |
+| Capability | diff | csvdiff | Excel Compare | Beyond Compare | Datafold | **Reconlify** |
+|---|---|---|---|---|---|---|
+| Understands tabular datasets | No | Yes | Yes | Yes | Yes | **Yes** |
+| Key-based row matching | No | Yes | Manual | Yes | Yes | **Yes** |
+| Detects missing rows | No | Yes | Manual | Partial | Yes | **Yes** |
+| Column-level mismatch detection | No | Yes | Manual | Partial | Yes | **Yes** |
+| Rule-based normalization | No | No | No | No | No | **Yes** |
+| Regex transformations | No | No | No | No | No | **Yes** |
+| Numeric tolerance | No | No | No | Yes | Yes | **Yes** |
+| Noise filtering | No | No | Manual | Manual | Partial | **Yes** |
+| Deterministic JSON reconciliation report | No | No | No | No | Partial | **Yes** |
+| Works with exported files | Yes | Yes | Yes | Yes | No | **Yes** |
+| Database integration | No | No | No | No | **Yes** | Planned |
+| CI/CD automation ready | Yes | Partial | No | No | Yes | **Yes** |
+| Local-first execution | Yes | Yes | Yes | Yes | No | **Yes** |
+
+Reconlify focuses on **semantic reconciliation for structured files**
+such as CSV exports, logs, and tabular datasets.
+
+While tools like Datafold specialize in comparing **database tables inside
+data warehouses**, Reconlify focuses on validating **exported datasets
+produced by pipelines, migrations, or financial systems**.
+
+This makes it particularly useful for:
+
+- QA validation of data migrations
+- regression testing for ETL pipelines
+- reconciliation of exported reports
+- financial and operational data audits
 
 ## Features
 
