@@ -179,7 +179,7 @@ reconlify run <config.yaml> --out out.json # custom output path
 
 ```bash
 reconlify --version
-# reconlify 0.1.0
+# reconlify 0.1.1
 ```
 
 Reconlify follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
