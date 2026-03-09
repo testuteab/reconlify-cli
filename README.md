@@ -2,36 +2,30 @@
 
 # Reconlify CLI
 
-**Semantic data reconciliation for the command line.**
+**Rule-based data reconciliation for exported files. Local-first. Deterministic.**
 
-Validate structured datasets using declarative YAML rules and produce deterministic JSON reconciliation reports suitable for CI/CD pipelines.
+Reconlify compares structured datasets — CSV exports, report outputs, migration snapshots — using declarative YAML rules. It matches rows by key, tolerates expected noise, and produces a deterministic JSON report suitable for CI/CD pipelines.
 
-Fully local. No data leaves your machine.
+No data leaves your machine.
 
-Typical use cases:
+## 30-Second Example
 
-- ETL validation
-- Data migration verification
-- Financial transaction reconciliation
-- CI pipeline dataset checks
-- Log comparison with normalization rules
-
-## Quick Example
+Two systems export the same trades, but with different column names, different row order, and minor numeric formatting differences:
 
 **source.csv**
 
 ```
-txn_id,amount
-1,100
-2,200
+trade_id,amount,currency
+T001,100,USD
+T002,200.00,USD
 ```
 
 **target.csv**
 
 ```
-txn_id,amount
-1,100
-2,210
+id,total_amount,currency
+T002,200.02,USD
+T001,100.00,USD
 ```
 
 **config.yaml**
@@ -40,27 +34,49 @@ txn_id,amount
 type: tabular
 source: source.csv
 target: target.csv
+
 keys:
-  - txn_id
+  - trade_id
+
+column_mapping:
+  trade_id: id
+  amount: total_amount
+
+tolerance:
+  amount: 0.05
 ```
 
 ```bash
+pip install reconlify-cli
 reconlify run config.yaml
+# Exit code: 0 — no meaningful differences
 ```
 
-Exit code: **1** (differences found). Report highlights:
+**Why exit code 0?**
 
-```
-rows_with_mismatches: 1
-missing_in_source:    0
-missing_in_target:    0
-```
+- Rows are matched by key (`trade_id`), not by position — row order does not matter
+- `column_mapping` aligns `trade_id` to `id` and `amount` to `total_amount`
+- `100` vs `100.00` are equal after numeric casting
+- `200.00` vs `200.02` — the difference of `0.02` is within the configured tolerance of `0.05`
 
-## How Reconlify Compares
+A line-based `diff` would flag every line. Reconlify finds zero meaningful differences.
 
-Reconlify is **not just another diff tool**.
+## Why Reconlify Exists
 
-It performs **semantic reconciliation** for structured data files. 
+If you work with exported data, you have probably written ad-hoc comparison scripts more than once:
+
+- Validating a data migration by comparing before/after CSV exports
+- Checking that an ETL pipeline still produces the same output after a code change
+- Reconciling financial exports between two systems
+- Comparing log files where timestamps or formatting vary
+
+These comparisons share a pattern: you need to match rows by key, ignore harmless noise (whitespace, casing, small rounding differences), and produce a clear report of what actually changed.
+
+Line-based tools like `diff` compare by position and treat any byte-level difference as a mismatch. That means reordered rows, renamed columns, trailing whitespace, and `100` vs `100.00` all show up as differences — even when the data is semantically identical.
+
+Reconlify handles this with declarative YAML rules instead of throwaway scripts.
+
+## How does Reconlify compare?
 
 | Capability | diff | csvdiff | Excel Compare | Beyond Compare | Datafold | **Reconlify** |
 |---|---|---|---|---|---|---|
@@ -79,53 +95,39 @@ It performs **semantic reconciliation** for structured data files.
 | Schema-aware column mapping | No | No | Manual | Partial | Partial | **Yes** |
 | Local-first execution | Yes | Yes | Yes | Yes | No | **Yes** |
 
-Reconlify can compare semantically equivalent datasets even when source and target use different column names — a common requirement in migration validation and cross-system reconciliation.
+Tools like Datafold are designed for comparing database tables inside data warehouses. Reconlify focuses on a different problem: validating **exported files** produced by pipelines, migrations, or financial systems — locally, deterministically, and without requiring database access.
 
-Reconlify focuses on **semantic reconciliation for structured files**
-such as CSV exports, logs, and tabular datasets.
+## Core Capabilities
 
-While tools like Datafold specialize in comparing **database tables inside
-data warehouses**, Reconlify focuses on validating **exported datasets
-produced by pipelines, migrations, or financial systems**.
+- **Key-based row matching** — single or composite keys; row order does not matter
+- **Column mapping** — compare files with different column names via `column_mapping`
+- **Missing row detection** — identifies rows present on one side but not the other
+- **Column-level mismatch reporting** — pinpoints which columns differ, with source and target values
+- **Numeric tolerance** — per-column absolute tolerance (e.g. `amount: 0.01`)
+- **Normalization rules** — trim whitespace, case-insensitive comparison, null normalization, regex extraction
+- **Source-side virtual columns** — generate computed columns via `normalization` pipelines (`concat`, `substr`, `map`, `round`, and more)
+- **Row filters** — exclude rows by key value or column-level filter rules
+- **Column control** — include, exclude, or ignore specific columns
+- **Deterministic JSON reports** — same inputs and config always produce the same report
+- **Text engine** — line-by-line or unordered comparison for log files and text outputs
+- **CI/CD ready** — exit codes `0` (match) / `1` (differences) / `2` (error)
+- **Fully local** — no network calls, no data upload
 
-This makes it particularly useful for:
+## Column Mapping
 
-- QA validation of data migrations
-- regression testing for ETL pipelines
-- reconciliation of exported reports
-- financial and operational data audits
+*Released in v0.1.1.*
 
-## Features
+When source and target files use different column names for the same data, `column_mapping` declares the correspondence:
 
-- Key-based dataset reconciliation (single or composite keys)
-- Schema-aware column mapping for files with different column names
-- Automatic missing-row detection (both directions)
-- Column-level mismatch detection with include/exclude control
-- Numeric tolerance support (per-column absolute tolerance)
-- Normalization rules (trim, case-insensitive, null handling, regex, virtual columns)
-- Row filters and exclusions
-- Deterministic JSON reconciliation reports
-- Machine-readable exit codes (0 / 1 / 2)
-- Two engines: **tabular** (CSV/TSV) and **text** (line-by-line / unordered)
-- CI/CD pipeline friendly
-- Fully local execution — no network calls
+```yaml
+column_mapping:
+  trade_id: id            # source "trade_id" matches target "id"
+  amount: total_amount    # source "amount" matches target "total_amount"
+```
 
-## Performance
+All other config fields — `keys`, `tolerance`, `string_rules`, `compare.include_columns` — use source-side (logical) column names. The mapping only affects how target columns are resolved.
 
-Reconlify uses DuckDB-backed tabular processing, streaming text comparison, and a local-first architecture. It processes large datasets locally without requiring a database or external service.
-
-| Dataset | Rows / Lines | Mode | Time |
-|---------|-------------|------|------|
-| CSV reconciliation (exact match) | 200k rows | tabular | ~2 s |
-| CSV reconciliation (high mismatch) | 200k rows | tabular | ~12 s |
-| Log comparison (positional diffs) | 500k lines | line_by_line | ~3 s |
-| Log comparison (unordered) | 250k lines | unordered_lines | < 1 s |
-
-Benchmarks were executed on a MacBook (Apple Silicon / Python 3.11) with default fixture settings.
-
-Performance depends on dataset structure, rule complexity, and system hardware.
-
-Full benchmark methodology and results: [PERF_TESTING.md](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md)
+This works with all existing features: tolerance, string rules, normalization, and column controls all apply to the logical column name.
 
 ## Installation
 
@@ -141,22 +143,20 @@ Or with [pipx](https://pipx.pypa.io/) for isolated installs:
 pipx install reconlify-cli
 ```
 
-> **Package name on PyPI:** `reconlify-cli`
-
-For development:
-
-```bash
-git clone https://github.com/testuteab/reconlify-cli.git && cd reconlify-cli
-make install          # runs: poetry install
-reconlify --help
-```
-
 ## CLI Usage
 
 ```bash
 reconlify run <config.yaml>                # default output: report.json
 reconlify run <config.yaml> --out out.json # custom output path
 ```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No differences found |
+| 1 | Differences found |
+| 2 | Error (config validation, file not found, runtime failure) |
 
 ### Options
 
@@ -167,78 +167,29 @@ reconlify run <config.yaml> --out out.json # custom output path
 | `--max-line-numbers N` | `0` (unlimited) | Max line numbers per distinct line in unordered mode |
 | `--debug-report` | off | Include processed line numbers in text report samples |
 
-### Exit Codes
+## Common Use Cases
 
-| Code | Meaning |
-|------|---------|
-| 0 | No differences found |
-| 1 | Differences found |
-| 2 | Error (config validation, file not found, runtime failure) |
+**Migration validation** — Export tables before and after a migration. Reconlify matches rows by key and reports exactly what changed, ignoring column renames and expected rounding.
 
-### Version
+**ETL regression testing** — Run your pipeline, compare the output against a known-good snapshot. Add tolerance for acceptable numeric drift. Automate it in CI.
 
-```bash
-reconlify --version
-# reconlify 0.1.1
-```
+**Financial reconciliation** — Compare exports from two systems (ERP vs ledger, internal vs external). Use normalization to handle whitespace, casing, and NULL representation differences.
 
-Reconlify follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
+**Report comparison** — Verify that a report generator produces the same output after a code change, even if column order or formatting varies.
 
-## Real-World Example: Accounting Transaction Reconciliation
+**Log comparison** — Use the text engine with `unordered_lines` mode to compare log files where line order is non-deterministic. Apply `drop_lines_regex` to strip timestamps.
 
-A finance team exports transactions from two systems (ERP and bank ledger) and needs to reconcile them nightly. Here's how Reconlify handles it.
+## Real-World Example
 
-### 1. Create sample data
+A finance team exports transactions from two systems and needs to reconcile them nightly:
 
-```bash
-cat <<'EOF' > source.csv
-txn_id,booking_date,account,amount,currency,counterparty,status,memo
-TXN-001,2026-01-15,4100,1500.00,USD,Acme Corp,BOOKED,Invoice 9201
-TXN-002,2026-01-16,4100,320.50,EUR,Globex Inc,BOOKED,Wire transfer
-TXN-003,2026-01-17,4200,75.00,USD,Jane Doe,BOOKED,Expense report
-TXN-004,2026-01-18,4100,10000.00,USD,Initech,CANCELLED,Reversed
-TXN-005,2026-01-19,4300,249.99,USD,Umbrella Ltd,BOOKED,Subscription
-TXN-006,2026-01-20,4100,,USD,Soylent Corp,BOOKED,Pending allocation
-EOF
-
-cat <<'EOF' > target.csv
-txn_id,booking_date,account,amount,currency,counterparty,status,memo
-TXN-001,2026-01-15,4100,1500.00,USD,  acme corp  ,BOOKED,Invoice 9201
-TXN-002,2026-01-16,4100,320.75,EUR,Globex Inc,BOOKED,Wire transfer
-TXN-003,2026-01-17,4200,75.00,USD,Jane Doe,BOOKED,Expense report
-TXN-005,2026-01-19,4300,249.99,USD,Umbrella Ltd,BOOKED,Subscription
-TXN-006,2026-01-20,4100,NULL,USD,Soylent Corp,BOOKED,Pending allocation
-TXN-007,2026-01-21,4100,430.00,USD,Wayne Ent,BOOKED,New deposit
-EOF
-```
-
-What's different between the two files:
-
-| Scenario | Row | Detail |
-|---|---|---|
-| Matches after normalization | TXN-001 | `counterparty` has extra spaces + lowercase in target — should match with trim + case rules |
-| Value mismatch | TXN-002 | `amount` is `320.50` vs `320.75` (exceeds tolerance) |
-| Exact match | TXN-003 | Identical |
-| Filtered out | TXN-004 | Status `CANCELLED` — excluded by row filter |
-| Exact match | TXN-005 | Identical |
-| NULL normalization | TXN-006 | Source has blank `amount`, target has `NULL` string — should match |
-| Missing in source | TXN-007 | Exists only in target |
-
-### 2. Create the reconciliation config
-
-```bash
-cat <<'EOF' > recon.yaml
+```yaml
 type: tabular
-source: source.csv
-target: target.csv
+source: erp_export.csv
+target: ledger_export.csv
 
 keys:
   - txn_id
-
-csv:
-  delimiter: ","
-  header: true
-  encoding: utf-8
 
 compare:
   trim_whitespace: true
@@ -253,143 +204,33 @@ filters:
       - column: status
         op: equals
         value: CANCELLED
-EOF
 ```
 
-Key config choices:
-
-- **`keys: [txn_id]`** — match rows by transaction ID
-- **`trim_whitespace` + `case_insensitive`** — ignore formatting noise
-- **`normalize_nulls`** — treat blank, `NULL`, and `null` as equivalent
-- **`exclude_columns: [memo]`** — skip free-text fields
-- **`row_filters`** — drop `CANCELLED` transactions before comparison
-
-### 3. Run the reconciliation
+This config matches rows by `txn_id`, ignores whitespace and casing differences, treats blank and `"NULL"` as equivalent, skips the free-text `memo` column, and filters out cancelled transactions before comparison.
 
 ```bash
 reconlify run recon.yaml --out report.json
-echo $?
 ```
 
-**Expected exit code: `1`** (differences found).
-
-The report will contain:
-
-- **missing_in_target: 0** — TXN-004 was filtered out, so not counted
-- **missing_in_source: 1** — TXN-007 exists only in target
-- **rows_with_mismatches: 1** — TXN-002 has an `amount` mismatch (`320.50` vs `320.75`)
-
-TXN-001 and TXN-006 match cleanly thanks to normalization rules.
-
-The report is written to `report.json`. It is **deterministic** — identical inputs and config always produce identical output (except the `generated_at` timestamp).
-
-## Text Engine
-
-Reconlify also compares text files line-by-line or as unordered line sets:
-
-```yaml
-type: text
-source: expected.log
-target: actual.log
-mode: unordered_lines
-normalize:
-  trim_lines: true
-  ignore_blank_lines: true
-```
-
-```bash
-reconlify run text_recon.yaml
-```
-
-In `unordered_lines` mode, line order is ignored — Reconlify compares occurrence counts of each distinct line. In `line_by_line` mode (default), lines are compared positionally.
-
-See the `examples/` directory for config samples.
-
-## Engines
-
-### Tabular Engine
-
-- **Key-based reconciliation** — Single or composite keys. Detects missing rows on either side and cell-level value mismatches.
-- **Column mapping** — Map source column names to different target column names (`column_mapping: {amount: total_amount}`).
-- **Column control** — Include or exclude specific columns from comparison.
-- **Numeric tolerance** — Absolute tolerance per column (e.g. `amount: 0.01`).
-- **String rules** — Per-column normalization: `trim`, `case_insensitive`, `contains`, `regex_extract`.
-- **Source-side normalization** — Virtual columns via ops: `map`, `concat`, `substr`, `add`, `sub`, `mul`, `div`, `coalesce`, `date_format`, `upper`, `lower`, `trim`, `round`.
-- **Row filters** — Exclude specific key values or filter rows by column rules.
-- **TSV support** — Set `csv.delimiter: "\t"`.
-
-### Text Engine
-
-- **Two comparison modes:** `line_by_line` (positional) and `unordered_lines` (multiset).
-- **Normalization:** `trim_lines`, `collapse_whitespace`, `case_insensitive`, `ignore_blank_lines`, `normalize_newlines`.
-- **Regex rules:** `drop_lines_regex` to remove lines, `replace_regex` to transform lines before comparison.
-
-## Report Format
-
-Every run produces a JSON report with a consistent structure:
-
-| Section | Description |
-|---------|-------------|
-| `summary` | Aggregate counts (rows, mismatches, missing). Zero differences = exit code 0 |
-| `details` | Metadata: keys used, columns compared, filters applied, per-column mismatch stats |
-| `samples` | Concrete examples of differences (tabular: `missing_in_target`, `missing_in_source`, `value_mismatches`, `excluded`; text: flat list or `samples_agg`) |
-| `error` | Present only on exit code 2. Machine-readable `code`, human-readable `message`, and `details` |
-| `warnings` | Optional list of warning strings (e.g. large line-number arrays in unordered mode) |
-
-## CI Usage
-
-```bash
-reconlify run recon.yaml --out report.json
-rc=$?
-
-if [ $rc -eq 2 ]; then
-  echo "ERROR: config or runtime failure" >&2
-  exit 1
-elif [ $rc -eq 1 ]; then
-  echo "WARN: differences found — see report.json" >&2
-fi
-```
-
-Exit code **1** means differences were found — your pipeline decides whether that's a warning or a failure. Exit code **2** is always an error.
-
-### GitHub Actions
-
-```yaml
-- name: Reconcile data
-  run: |
-    reconlify run recon.yaml --out report.json
-    exit_code=$?
-    if [ $exit_code -eq 2 ]; then
-      echo "::error::Reconciliation failed with error"
-      exit 1
-    elif [ $exit_code -eq 1 ]; then
-      echo "::warning::Differences found — see report.json"
-    fi
-
-- name: Upload report
-  if: always()
-  uses: actions/upload-artifact@v4
-  with:
-    name: recon-report
-    path: report.json
-```
+The JSON report contains summary counts, per-column mismatch statistics, and concrete sample rows for every category of difference.
 
 ## Documentation
 
 - [User Guide](https://github.com/testuteab/reconlify-cli/blob/main/docs/RECONLIFY_CLI_USER_GUIDE_v1.md) — In-depth guide covering both engines and best practices
+- [Column Mapping](https://github.com/testuteab/reconlify-cli/blob/main/docs/COLUMN_MAPPING_V1_1.md) — Column mapping semantics, examples, and limitations
 - [YAML Config Schema](https://github.com/testuteab/reconlify-cli/blob/main/docs/YAML_SCHEMA_v1.md) — Full reference for all configuration options
 - [Report Schema](https://github.com/testuteab/reconlify-cli/blob/main/docs/REPORT_SCHEMA_v1.md) — Complete specification of the JSON report format
 - [Performance Testing](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md) — Benchmark methodology and baseline results
 
-## Reconlify Desktop
+## Current Scope
 
-[Reconlify Desktop](https://reconlify.com/) is a graphical interface for Reconlify CLI. It allows users to:
+Reconlify currently supports:
 
-- Visually build YAML reconciliation configs
-- Run reconciliations without using the terminal
-- Inspect reconciliation reports interactively
+- **Tabular:** CSV and TSV files (any delimiter)
+- **Text:** line-by-line and unordered line comparison
+- **Execution:** local only, single-machine
 
-Reconlify CLI remains the core reconciliation engine.
+Not currently in scope: direct database connections, Excel/Parquet file formats, cloud execution, or multi-user workflows. See the [changelog](https://github.com/testuteab/reconlify-cli/blob/main/CHANGELOG.md) for what has shipped.
 
 ## Development
 
@@ -401,24 +242,6 @@ make lint          # ruff linter
 make format        # auto-fix lint + format
 make clean         # remove build artifacts and caches
 ```
-
-### Performance Testing
-
-```bash
-make perf          # generate fixtures + run full benchmark suite
-make perf-smoke    # lightweight perf smoke tests
-make perf-clean    # remove generated fixtures
-```
-
-See [Performance Testing](https://github.com/testuteab/reconlify-cli/blob/main/docs/PERF_TESTING.md) for details and baseline results.
-
-## Changelog
-
-See [CHANGELOG.md](https://github.com/testuteab/reconlify-cli/blob/main/CHANGELOG.md) for release history.
-
----
-
-Reconlify sits between simple file diff tools and heavy enterprise reconciliation systems, providing a deterministic, developer-friendly workflow for validating structured data locally.
 
 ## License
 
